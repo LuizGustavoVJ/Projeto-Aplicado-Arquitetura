@@ -1,0 +1,195 @@
+openapi: 3.0.1
+info:
+  title: Payment Integration Platform (PIP) API
+  description: API para orquestração e processamento de pagamentos.
+  version: 1.0.0
+
+servers:
+  - url: https://api.pip.com/v1
+    description: Servidor de Produção
+
+tags:
+  - name: Pagamentos
+    description: Operações relacionadas ao ciclo de vida de um pagamento.
+
+paths:
+  /payments/authorize:
+    post:
+      tags:
+        - Pagamentos
+      summary: Autoriza um novo pagamento
+      description: Submete uma transação para autorização junto ao gateway de pagamento. A resposta é síncrona.
+      operationId: authorizePayment
+      requestBody:
+        description: Dados da transação a ser autorizada.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationRequest'
+      responses:
+        '201':
+          description: Pagamento processado (autorizado ou negado pelo emissor).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /payments/{id}/capture:
+    post:
+      tags:
+        - Pagamentos
+      summary: Captura um pagamento autorizado
+      description: Efetiva a cobrança de um pagamento que foi previamente autorizado.
+      operationId: capturePayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Pagamento capturado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /payments/{id}/void:
+    post:
+      tags:
+        - Pagamentos
+      summary: Cancela um pagamento autorizado
+      description: Anula uma autorização de pagamento que ainda não foi capturada.
+      operationId: voidPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Pagamento cancelado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /payments/{id}:
+    get:
+      tags:
+        - Pagamentos
+      summary: Consulta um pagamento
+      description: Recupera os detalhes e o status atual de um pagamento específico.
+      operationId: getPaymentById
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Detalhes do pagamento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      description: O ID único da transação de pagamento (UUID).
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    AuthorizationRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - cardToken
+      properties:
+        amount:
+          type: integer
+          format: int64
+          description: Valor do pagamento em centavos. Ex: 10000 para R$ 100,00.
+        currency:
+          type: string
+          description: Código da moeda no formato ISO 4217.
+          example: 'BRL'
+        cardToken:
+          type: string
+          description: Token do cartão gerado por um cofre seguro (Vault).
+        capture:
+          type: boolean
+          description: Se true, a transação será capturada automaticamente. Se false, será apenas autorizada.
+          default: true
+
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID único da transação de pagamento.
+        status:
+          type: string
+          enum: [AUTHORIZED, DECLINED, CAPTURED, VOIDED]
+          description: Status atual do pagamento.
+        amount:
+          type: integer
+          format: int64
+          description: Valor do pagamento em centavos.
+        gatewayDetails:
+          type: object
+          description: Objeto contendo detalhes da resposta do gateway (código de autorização, etc.).
+
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Requisição inválida. O corpo da resposta conterá detalhes sobre o erro de validação.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: O recurso solicitado (ex: pagamento com o ID informado) não foi encontrado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: A requisição é válida, mas a operação não pode ser executada no estado atual do recurso (ex: tentar capturar um pagamento já capturado).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Erro interno no servidor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
