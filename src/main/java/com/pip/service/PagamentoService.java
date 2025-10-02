@@ -4,183 +4,346 @@ import com.pip.dto.AuthorizationRequest;
 import com.pip.dto.CaptureRequest;
 import com.pip.dto.VoidRequest;
 import com.pip.dto.PaymentResponse;
-import com.pip.model.Transacao;
-import com.pip.model.TransactionStatus;
+import com.pip.model.*;
 import com.pip.repository.TransacaoRepository;
+import com.pip.repository.LogTransacaoRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.ZonedDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Serviço responsável pela lógica de negócio de pagamentos
+ * 
+ * Implementa o fluxo completo de processamento de pagamentos:
+ * - Autorização com seleção inteligente de gateway
+ * - Captura com validações
+ * - Cancelamento com auditoria
+ * - Consulta com filtros
+ * - Integração com webhooks
  * 
  * @author Luiz Gustavo Finotello
  */
 @Service
 public class PagamentoService {
 
+    private static final Logger logger = LoggerFactory.getLogger(PagamentoService.class);
+
     @Autowired
     private TransacaoRepository transacaoRepository;
+
+    @Autowired
+    private LogTransacaoRepository logTransacaoRepository;
+
+    @Autowired
+    private GatewayRoutingService gatewayRoutingService;
+
+    @Autowired
+    private GatewayIntegrationService gatewayIntegrationService;
+
+    @Autowired
+    private WebhookService webhookService;
 
     /**
      * Autoriza um novo pagamento
      * 
      * @param request Dados da requisição de autorização
+     * @param lojista Lojista que está processando o pagamento
      * @return Resposta com os detalhes do pagamento processado
      */
-    public PaymentResponse autorizarPagamento(AuthorizationRequest request) {
-        // TODO: Implementar lógica de autorização na Sprint 03
-        
-        // Por enquanto, simula uma autorização bem-sucedida
-        Transacao transacao = new Transacao(
-            UUID.randomUUID(), // lojistaId simulado
-            request.getAmount(),
-            "AUTHORIZED",
-            request.getCardToken()
-        );
-        
+    @Transactional
+    public PaymentResponse autorizarPagamento(AuthorizationRequest request, Lojista lojista) {
+        logger.info("Iniciando autorização de pagamento para lojista {}", lojista.getId());
+
+        // Criar transação
+        Transacao transacao = new Transacao();
+        transacao.setTransactionId("TXN-" + UUID.randomUUID());
+        transacao.setLojista(lojista);
+        transacao.setValor(request.getAmount());
+        transacao.setMoeda(request.getCurrency());
+        transacao.setParcelas(request.getInstallments());
+        transacao.setDescricao(request.getDescription());
+        transacao.setStatus(TransactionStatus.PENDING);
+        transacao.setCreatedAt(ZonedDateTime.now());
+
+        // Dados do cliente
+        if (request.getCustomer() != null) {
+            transacao.setCustomerName(request.getCustomer().get("name"));
+            transacao.setCustomerEmail(request.getCustomer().get("email"));
+            transacao.setCustomerDocument(request.getCustomer().get("document"));
+        }
+
+        // Salvar transação inicial
         transacao = transacaoRepository.save(transacao);
-        
-        Map<String, Object> gatewayDetails = new HashMap<>();
-        gatewayDetails.put("authorizationCode", "AUTH123456");
-        gatewayDetails.put("gatewayTransactionId", "GW789012");
-        
-        return new PaymentResponse(
-            transacao.getId(),
-            transacao.getStatus(),
-            transacao.getValor(),
-            gatewayDetails
-        );
+
+        // Registrar log
+        registrarLog(transacao, "AUTHORIZATION_STARTED", "Iniciando processo de autorização");
+
+        try {
+            // Selecionar melhor gateway
+            Gateway gateway = gatewayRoutingService.selecionarMelhorGateway(lojista, request.getAmount());
+            transacao.setGateway(gateway);
+            transacao = transacaoRepository.save(transacao);
+
+            logger.info("Gateway selecionado: {} para transação {}", gateway.getCodigo(), transacao.getTransactionId());
+
+            // Processar autorização no gateway
+            PaymentResponse response = gatewayIntegrationService.authorize(gateway, request, transacao);
+
+            // Atualizar transação com resposta
+            if (response.isSuccess()) {
+                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setGatewayTransactionId(response.getGatewayTransactionId());
+                transacao.setAuthorizationCode(response.getAuthorizationCode());
+                transacao.setNsu(response.getNsu());
+                transacao.setTid(response.getTid());
+                transacao.setAuthorizedAt(ZonedDateTime.now());
+
+                registrarLog(transacao, "AUTHORIZATION_SUCCESS", "Autorização realizada com sucesso");
+
+                // Criar webhook para notificar lojista
+                webhookService.criarWebhook(lojista, transacao, "TRANSACTION_AUTHORIZED");
+
+            } else {
+                transacao.setStatus(TransactionStatus.FAILED);
+                transacao.setErrorCode(response.getErrorCode());
+                transacao.setErrorMessage(response.getErrorMessage());
+
+                registrarLog(transacao, "AUTHORIZATION_FAILED", "Falha na autorização: " + response.getErrorMessage());
+            }
+
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacao = transacaoRepository.save(transacao);
+
+            return response;
+
+        } catch (Exception e) {
+            logger.error("Erro ao autorizar pagamento: {}", e.getMessage(), e);
+
+            transacao.setStatus(TransactionStatus.FAILED);
+            transacao.setErrorMessage(e.getMessage());
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacaoRepository.save(transacao);
+
+            registrarLog(transacao, "AUTHORIZATION_ERROR", "Erro no processamento: " + e.getMessage());
+
+            throw new RuntimeException("Falha ao processar autorização: " + e.getMessage(), e);
+        }
     }
 
     /**
      * Captura um pagamento previamente autorizado
      * 
-     * @param paymentId ID do pagamento a ser capturado
-     * @param request Dados da captura (valor e descrição)
+     * @param transactionId ID da transação a ser capturada
+     * @param request Dados da captura
      * @return Resposta com os detalhes do pagamento capturado
      */
     @Transactional
-    public PaymentResponse capturarPagamento(UUID paymentId, CaptureRequest request) {
-        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
-        
-        if (transacaoOpt.isEmpty()) {
-            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+    public PaymentResponse capturarPagamento(String transactionId, CaptureRequest request) {
+        logger.info("Iniciando captura de pagamento {}", transactionId);
+
+        // Buscar transação
+        Transacao transacao = transacaoRepository.findByTransactionId(transactionId)
+            .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
+
+        // Validar status
+        if (transacao.getStatus() != TransactionStatus.AUTHORIZED) {
+            throw new IllegalStateException("Transação não pode ser capturada. Status atual: " + transacao.getStatus());
         }
-        
-        Transacao transacao = transacaoOpt.get();
-        TransactionStatus currentStatus = TransactionStatus.fromCode(transacao.getStatus());
-        
-        if (!currentStatus.canCapture()) {
-            throw new IllegalStateException("Pagamento não pode ser capturado. Status atual: " + currentStatus);
-        }
-        
-        // Validar valor da captura
-        BigDecimal valorOriginal = BigDecimal.valueOf(transacao.getValor()).divide(BigDecimal.valueOf(100));
-        if (request.getAmount().compareTo(valorOriginal) > 0) {
+
+        // Validar valor
+        if (request.getAmount() > transacao.getValor()) {
             throw new IllegalArgumentException("Valor da captura não pode ser maior que o valor autorizado");
         }
-        
-        // Atualizar status da transação
-        transacao.setStatus(TransactionStatus.CAPTURED.getCode());
-        transacao.setUpdatedAt(ZonedDateTime.now());
-        
-        // Simular captura no gateway (será implementado com gateways reais na Fase 2)
-        transacao = transacaoRepository.save(transacao);
-        
-        Map<String, Object> gatewayDetails = new HashMap<>();
-        gatewayDetails.put("captureCode", "CAP" + System.currentTimeMillis());
-        gatewayDetails.put("capturedAmount", request.getAmount());
-        gatewayDetails.put("description", request.getDescription());
-        gatewayDetails.put("capturedAt", ZonedDateTime.now());
-        
-        return new PaymentResponse(
-            transacao.getId(),
-            transacao.getStatus(),
-            transacao.getValor(),
-            gatewayDetails
-        );
+
+        registrarLog(transacao, "CAPTURE_STARTED", "Iniciando processo de captura");
+
+        try {
+            // Processar captura no gateway
+            PaymentResponse response = gatewayIntegrationService.capture(transacao.getGateway(), request, transacao);
+
+            // Atualizar transação
+            if (response.isSuccess()) {
+                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setValorCapturado(request.getAmount());
+                transacao.setCapturedAt(ZonedDateTime.now());
+
+                registrarLog(transacao, "CAPTURE_SUCCESS", "Captura realizada com sucesso");
+
+                // Criar webhook
+                webhookService.criarWebhook(transacao.getLojista(), transacao, "TRANSACTION_CAPTURED");
+
+            } else {
+                transacao.setStatus(TransactionStatus.FAILED);
+                transacao.setErrorCode(response.getErrorCode());
+                transacao.setErrorMessage(response.getErrorMessage());
+
+                registrarLog(transacao, "CAPTURE_FAILED", "Falha na captura: " + response.getErrorMessage());
+            }
+
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacaoRepository.save(transacao);
+
+            return response;
+
+        } catch (Exception e) {
+            logger.error("Erro ao capturar pagamento: {}", e.getMessage(), e);
+
+            transacao.setStatus(TransactionStatus.FAILED);
+            transacao.setErrorMessage(e.getMessage());
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacaoRepository.save(transacao);
+
+            registrarLog(transacao, "CAPTURE_ERROR", "Erro no processamento: " + e.getMessage());
+
+            throw new RuntimeException("Falha ao processar captura: " + e.getMessage(), e);
+        }
     }
 
     /**
      * Cancela um pagamento autorizado
      * 
-     * @param paymentId ID do pagamento a ser cancelado
-     * @param request Dados do cancelamento (motivo e observações)
+     * @param transactionId ID da transação a ser cancelada
+     * @param request Dados do cancelamento
      * @return Resposta com os detalhes do pagamento cancelado
      */
     @Transactional
-    public PaymentResponse cancelarPagamento(UUID paymentId, VoidRequest request) {
-        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
-        
-        if (transacaoOpt.isEmpty()) {
-            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+    public PaymentResponse cancelarPagamento(String transactionId, VoidRequest request) {
+        logger.info("Iniciando cancelamento de pagamento {}", transactionId);
+
+        // Buscar transação
+        Transacao transacao = transacaoRepository.findByTransactionId(transactionId)
+            .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
+
+        // Validar status
+        if (transacao.getStatus() != TransactionStatus.AUTHORIZED && 
+            transacao.getStatus() != TransactionStatus.CAPTURED) {
+            throw new IllegalStateException("Transação não pode ser cancelada. Status atual: " + transacao.getStatus());
         }
-        
-        Transacao transacao = transacaoOpt.get();
-        TransactionStatus currentStatus = TransactionStatus.fromCode(transacao.getStatus());
-        
-        if (!currentStatus.canVoid()) {
-            throw new IllegalStateException("Pagamento não pode ser cancelado. Status atual: " + currentStatus);
+
+        registrarLog(transacao, "VOID_STARTED", "Iniciando processo de cancelamento");
+
+        try {
+            // Processar cancelamento no gateway
+            PaymentResponse response = gatewayIntegrationService.voidTransaction(transacao.getGateway(), request, transacao);
+
+            // Atualizar transação
+            if (response.isSuccess()) {
+                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setVoidReason(request.getReason());
+                transacao.setVoidedAt(ZonedDateTime.now());
+
+                registrarLog(transacao, "VOID_SUCCESS", "Cancelamento realizado com sucesso");
+
+                // Criar webhook
+                webhookService.criarWebhook(transacao.getLojista(), transacao, "TRANSACTION_VOIDED");
+
+            } else {
+                transacao.setErrorCode(response.getErrorCode());
+                transacao.setErrorMessage(response.getErrorMessage());
+
+                registrarLog(transacao, "VOID_FAILED", "Falha no cancelamento: " + response.getErrorMessage());
+            }
+
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacaoRepository.save(transacao);
+
+            return response;
+
+        } catch (Exception e) {
+            logger.error("Erro ao cancelar pagamento: {}", e.getMessage(), e);
+
+            transacao.setErrorMessage(e.getMessage());
+            transacao.setUpdatedAt(ZonedDateTime.now());
+            transacaoRepository.save(transacao);
+
+            registrarLog(transacao, "VOID_ERROR", "Erro no processamento: " + e.getMessage());
+
+            throw new RuntimeException("Falha ao processar cancelamento: " + e.getMessage(), e);
         }
-        
-        // Atualizar status da transação
-        transacao.setStatus(TransactionStatus.VOIDED.getCode());
-        transacao.setUpdatedAt(ZonedDateTime.now());
-        
-        // Simular cancelamento no gateway (será implementado com gateways reais na Fase 2)
-        transacao = transacaoRepository.save(transacao);
-        
-        Map<String, Object> gatewayDetails = new HashMap<>();
-        gatewayDetails.put("voidCode", "VOID" + System.currentTimeMillis());
-        gatewayDetails.put("reason", request.getReason());
-        gatewayDetails.put("notes", request.getNotes());
-        gatewayDetails.put("voidedAt", ZonedDateTime.now());
-        
-        return new PaymentResponse(
-            transacao.getId(),
-            transacao.getStatus(),
-            transacao.getValor(),
-            gatewayDetails
-        );
     }
 
     /**
-     * Consulta um pagamento pelo ID
+     * Consulta uma transação pelo ID
      * 
-     * @param paymentId ID do pagamento a ser consultado
-     * @return Resposta com os detalhes do pagamento
+     * @param transactionId ID da transação
+     * @return Resposta com os detalhes da transação
      */
-    public PaymentResponse consultarPagamento(UUID paymentId) {
-        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
-        
-        if (transacaoOpt.isEmpty()) {
-            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+    public PaymentResponse consultarPagamento(String transactionId) {
+        logger.info("Consultando pagamento {}", transactionId);
+
+        Transacao transacao = transacaoRepository.findByTransactionId(transactionId)
+            .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
+
+        PaymentResponse response = new PaymentResponse();
+        response.setSuccess(transacao.getStatus() == TransactionStatus.AUTHORIZED || 
+                           transacao.getStatus() == TransactionStatus.CAPTURED);
+        response.setStatus(transacao.getStatus().name());
+        response.setTransactionId(transacao.getTransactionId());
+        response.setGatewayTransactionId(transacao.getGatewayTransactionId());
+        response.setAuthorizationCode(transacao.getAuthorizationCode());
+        response.setNsu(transacao.getNsu());
+        response.setTid(transacao.getTid());
+        response.setErrorCode(transacao.getErrorCode());
+        response.setErrorMessage(transacao.getErrorMessage());
+        response.setTimestamp(transacao.getCreatedAt());
+
+        return response;
+    }
+
+    /**
+     * Lista transações com filtros
+     * 
+     * @param lojistaId ID do lojista (opcional)
+     * @param status Status da transação (opcional)
+     * @param dataInicio Data inicial (opcional)
+     * @param dataFim Data final (opcional)
+     * @param pageable Paginação
+     * @return Página de transações
+     */
+    public Page<Transacao> listarTransacoes(UUID lojistaId, TransactionStatus status, 
+                                            ZonedDateTime dataInicio, ZonedDateTime dataFim, 
+                                            Pageable pageable) {
+        logger.info("Listando transações com filtros");
+
+        Specification<Transacao> spec = Specification.where(null);
+
+        if (lojistaId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("lojista").get("id"), lojistaId));
         }
-        
-        Transacao transacao = transacaoOpt.get();
-        
-        Map<String, Object> gatewayDetails = new HashMap<>();
-        gatewayDetails.put("transactionId", transacao.getId());
-        gatewayDetails.put("lojistaId", transacao.getLojistaId());
-        gatewayDetails.put("cardToken", transacao.getCardToken());
-        gatewayDetails.put("gatewayId", transacao.getGatewayId());
-        gatewayDetails.put("createdAt", transacao.getCreatedAt());
-        gatewayDetails.put("updatedAt", transacao.getUpdatedAt());
-        
-        return new PaymentResponse(
-            transacao.getId(),
-            transacao.getStatus(),
-            transacao.getValor(),
-            gatewayDetails
-        );
+
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+
+        if (dataInicio != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), dataInicio));
+        }
+
+        if (dataFim != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("createdAt"), dataFim));
+        }
+
+        return transacaoRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * Registra log de transação
+     */
+    private void registrarLog(Transacao transacao, String evento, String descricao) {
+        LogTransacao log = new LogTransacao();
+        log.setTransacao(transacao);
+        log.setEvento(evento);
+        log.setDescricao(descricao);
+        log.setTimestamp(ZonedDateTime.now());
+        logTransacaoRepository.save(log);
     }
 }
-

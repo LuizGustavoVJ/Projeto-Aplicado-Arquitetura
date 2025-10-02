@@ -1,6 +1,7 @@
 package com.pip.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pip.messaging.WebhookProducer;
 import com.pip.model.Lojista;
 import com.pip.model.Transacao;
 import com.pip.model.WebhookEvent;
@@ -45,6 +46,9 @@ public class WebhookService {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private WebhookProducer webhookProducer;
 
     /**
      * Cria webhook para evento de transação
@@ -97,6 +101,14 @@ public class WebhookService {
         webhookEvent = webhookEventRepository.save(webhookEvent);
 
         logger.info("Webhook event criado com ID: {}", webhookEvent.getId());
+
+        // Enviar para fila RabbitMQ para processamento assíncrono
+        try {
+            webhookProducer.sendWebhook(webhookEvent.getId());
+            logger.info("Webhook {} enviado para fila RabbitMQ", webhookEvent.getId());
+        } catch (Exception e) {
+            logger.error("Erro ao enviar webhook para fila: {}", e.getMessage(), e);
+        }
 
         return webhookEvent;
     }

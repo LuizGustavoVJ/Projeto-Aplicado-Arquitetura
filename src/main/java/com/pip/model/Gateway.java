@@ -143,6 +143,20 @@ public class Gateway {
     @Enumerated(EnumType.STRING)
     private HealthStatus healthStatus;
 
+    // Campos específicos para PIX
+    @Column(name = "pix_key", length = 200)
+    @Size(max = 200, message = "Chave PIX deve ter no máximo 200 caracteres")
+    private String pixKey;
+
+    // Campos específicos para Boleto
+    @Column(name = "agencia", length = 10)
+    @Size(max = 10, message = "Agência deve ter no máximo 10 caracteres")
+    private String agencia;
+
+    @Column(name = "conta", length = 20)
+    @Size(max = 20, message = "Conta deve ter no máximo 20 caracteres")
+    private String conta;
+
     // Construtores
     public Gateway() {
         this.createdAt = ZonedDateTime.now();
@@ -538,6 +552,43 @@ public class Gateway {
     public void setHealthStatus(HealthStatus healthStatus) {
         this.healthStatus = healthStatus;
         this.updatedAt = ZonedDateTime.now();
+    }
+
+    public String getPixKey() {
+        return pixKey;
+    }
+
+    public void setPixKey(String pixKey) {
+        this.pixKey = pixKey;
+        this.updatedAt = ZonedDateTime.now();
+    }
+
+    public String getAgencia() {
+        return agencia;
+    }
+
+    public void setAgencia(String agencia) {
+        this.agencia = agencia;
+        this.updatedAt = ZonedDateTime.now();
+    }
+
+    public String getConta() {
+        return conta;
+    }
+
+    public void setConta(String conta) {
+        this.conta = conta;
+        this.updatedAt = ZonedDateTime.now();
+    }
+
+    // Método auxiliar para obter a URL da API baseada no ambiente
+    public String getApiUrl() {
+        return ambiente == AmbienteGateway.PRODUCTION ? urlBase : urlSandbox;
+    }
+
+    // Método auxiliar para obter a chave do merchant
+    public String getMerchantKey() {
+        return apiKey;
     }
 }
 
