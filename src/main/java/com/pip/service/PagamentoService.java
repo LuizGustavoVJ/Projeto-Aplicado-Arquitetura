@@ -1,15 +1,22 @@
 package com.pip.service;
 
 import com.pip.dto.AuthorizationRequest;
+import com.pip.dto.CaptureRequest;
+import com.pip.dto.VoidRequest;
 import com.pip.dto.PaymentResponse;
 import com.pip.model.Transacao;
+import com.pip.model.TransactionStatus;
 import com.pip.repository.TransacaoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Optional;
 
 /**
  * Serviço responsável pela lógica de negócio de pagamentos
@@ -57,22 +64,92 @@ public class PagamentoService {
      * Captura um pagamento previamente autorizado
      * 
      * @param paymentId ID do pagamento a ser capturado
+     * @param request Dados da captura (valor e descrição)
      * @return Resposta com os detalhes do pagamento capturado
      */
-    public PaymentResponse capturarPagamento(UUID paymentId) {
-        // TODO: Implementar lógica de captura na Sprint 03
-        throw new UnsupportedOperationException("Método será implementado na Sprint 03");
+    @Transactional
+    public PaymentResponse capturarPagamento(UUID paymentId, CaptureRequest request) {
+        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
+        
+        if (transacaoOpt.isEmpty()) {
+            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+        }
+        
+        Transacao transacao = transacaoOpt.get();
+        TransactionStatus currentStatus = TransactionStatus.fromCode(transacao.getStatus());
+        
+        if (!currentStatus.canCapture()) {
+            throw new IllegalStateException("Pagamento não pode ser capturado. Status atual: " + currentStatus);
+        }
+        
+        // Validar valor da captura
+        BigDecimal valorOriginal = BigDecimal.valueOf(transacao.getValor()).divide(BigDecimal.valueOf(100));
+        if (request.getAmount().compareTo(valorOriginal) > 0) {
+            throw new IllegalArgumentException("Valor da captura não pode ser maior que o valor autorizado");
+        }
+        
+        // Atualizar status da transação
+        transacao.setStatus(TransactionStatus.CAPTURED.getCode());
+        transacao.setUpdatedAt(ZonedDateTime.now());
+        
+        // Simular captura no gateway (será implementado com gateways reais na Fase 2)
+        transacao = transacaoRepository.save(transacao);
+        
+        Map<String, Object> gatewayDetails = new HashMap<>();
+        gatewayDetails.put("captureCode", "CAP" + System.currentTimeMillis());
+        gatewayDetails.put("capturedAmount", request.getAmount());
+        gatewayDetails.put("description", request.getDescription());
+        gatewayDetails.put("capturedAt", ZonedDateTime.now());
+        
+        return new PaymentResponse(
+            transacao.getId(),
+            transacao.getStatus(),
+            transacao.getValor(),
+            gatewayDetails
+        );
     }
 
     /**
      * Cancela um pagamento autorizado
      * 
      * @param paymentId ID do pagamento a ser cancelado
+     * @param request Dados do cancelamento (motivo e observações)
      * @return Resposta com os detalhes do pagamento cancelado
      */
-    public PaymentResponse cancelarPagamento(UUID paymentId) {
-        // TODO: Implementar lógica de cancelamento na Sprint 03
-        throw new UnsupportedOperationException("Método será implementado na Sprint 03");
+    @Transactional
+    public PaymentResponse cancelarPagamento(UUID paymentId, VoidRequest request) {
+        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
+        
+        if (transacaoOpt.isEmpty()) {
+            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+        }
+        
+        Transacao transacao = transacaoOpt.get();
+        TransactionStatus currentStatus = TransactionStatus.fromCode(transacao.getStatus());
+        
+        if (!currentStatus.canVoid()) {
+            throw new IllegalStateException("Pagamento não pode ser cancelado. Status atual: " + currentStatus);
+        }
+        
+        // Atualizar status da transação
+        transacao.setStatus(TransactionStatus.VOIDED.getCode());
+        transacao.setUpdatedAt(ZonedDateTime.now());
+        
+        // Simular cancelamento no gateway (será implementado com gateways reais na Fase 2)
+        transacao = transacaoRepository.save(transacao);
+        
+        Map<String, Object> gatewayDetails = new HashMap<>();
+        gatewayDetails.put("voidCode", "VOID" + System.currentTimeMillis());
+        gatewayDetails.put("reason", request.getReason());
+        gatewayDetails.put("notes", request.getNotes());
+        gatewayDetails.put("voidedAt", ZonedDateTime.now());
+        
+        return new PaymentResponse(
+            transacao.getId(),
+            transacao.getStatus(),
+            transacao.getValor(),
+            gatewayDetails
+        );
     }
 
     /**
@@ -82,8 +159,28 @@ public class PagamentoService {
      * @return Resposta com os detalhes do pagamento
      */
     public PaymentResponse consultarPagamento(UUID paymentId) {
-        // TODO: Implementar lógica de consulta na Sprint 03
-        throw new UnsupportedOperationException("Método será implementado na Sprint 03");
+        Optional<Transacao> transacaoOpt = transacaoRepository.findById(paymentId);
+        
+        if (transacaoOpt.isEmpty()) {
+            throw new IllegalArgumentException("Pagamento não encontrado: " + paymentId);
+        }
+        
+        Transacao transacao = transacaoOpt.get();
+        
+        Map<String, Object> gatewayDetails = new HashMap<>();
+        gatewayDetails.put("transactionId", transacao.getId());
+        gatewayDetails.put("lojistaId", transacao.getLojistaId());
+        gatewayDetails.put("cardToken", transacao.getCardToken());
+        gatewayDetails.put("gatewayId", transacao.getGatewayId());
+        gatewayDetails.put("createdAt", transacao.getCreatedAt());
+        gatewayDetails.put("updatedAt", transacao.getUpdatedAt());
+        
+        return new PaymentResponse(
+            transacao.getId(),
+            transacao.getStatus(),
+            transacao.getValor(),
+            gatewayDetails
+        );
     }
 }
 
