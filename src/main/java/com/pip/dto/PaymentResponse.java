@@ -1,6 +1,6 @@
 package com.pip.dto;
 
-import java.util.UUID;
+import java.time.ZonedDateTime;
 import java.util.Map;
 
 /**
@@ -10,28 +10,28 @@ import java.util.Map;
  */
 public class PaymentResponse {
 
-    private UUID id;
+    private boolean success;
     private String status;
-    private Long amount;
-    private Map<String, Object> gatewayDetails;
+    private String transactionId;
+    private String gatewayTransactionId;
+    private String authorizationCode;
+    private String nsu;
+    private String tid;
+    private String errorCode;
+    private String errorMessage;
+    private ZonedDateTime timestamp;
+    private Map<String, Object> additionalData;
 
     // Construtores
     public PaymentResponse() {}
 
-    public PaymentResponse(UUID id, String status, Long amount, Map<String, Object> gatewayDetails) {
-        this.id = id;
-        this.status = status;
-        this.amount = amount;
-        this.gatewayDetails = gatewayDetails;
-    }
-
     // Getters e Setters
-    public UUID getId() {
-        return id;
+    public boolean isSuccess() {
+        return success;
     }
 
-    public void setId(UUID id) {
-        this.id = id;
+    public void setSuccess(boolean success) {
+        this.success = success;
     }
 
     public String getStatus() {
@@ -42,20 +42,75 @@ public class PaymentResponse {
         this.status = status;
     }
 
-    public Long getAmount() {
-        return amount;
+    public String getTransactionId() {
+        return transactionId;
     }
 
-    public void setAmount(Long amount) {
-        this.amount = amount;
+    public void setTransactionId(String transactionId) {
+        this.transactionId = transactionId;
     }
 
-    public Map<String, Object> getGatewayDetails() {
-        return gatewayDetails;
+    public String getGatewayTransactionId() {
+        return gatewayTransactionId;
     }
 
-    public void setGatewayDetails(Map<String, Object> gatewayDetails) {
-        this.gatewayDetails = gatewayDetails;
+    public void setGatewayTransactionId(String gatewayTransactionId) {
+        this.gatewayTransactionId = gatewayTransactionId;
+    }
+
+    public String getAuthorizationCode() {
+        return authorizationCode;
+    }
+
+    public void setAuthorizationCode(String authorizationCode) {
+        this.authorizationCode = authorizationCode;
+    }
+
+    public String getNsu() {
+        return nsu;
+    }
+
+    public void setNsu(String nsu) {
+        this.nsu = nsu;
+    }
+
+    public String getTid() {
+        return tid;
+    }
+
+    public void setTid(String tid) {
+        this.tid = tid;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public void setErrorCode(String errorCode) {
+        this.errorCode = errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
+    }
+
+    public ZonedDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(ZonedDateTime timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public Map<String, Object> getAdditionalData() {
+        return additionalData;
+    }
+
+    public void setAdditionalData(Map<String, Object> additionalData) {
+        this.additionalData = additionalData;
     }
 }
-
