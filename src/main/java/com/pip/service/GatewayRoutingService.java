@@ -1,21 +1,35 @@
 package com.pip.service;
 
-import com.pip.model.*;
+import com.pip.model.Gateway;
+import com.pip.model.Lojista;
+import com.pip.model.LogTransacao;
 import com.pip.repository.GatewayRepository;
 import com.pip.repository.LogTransacaoRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Serviço responsável pelo roteamento inteligente de gateways
+ * Serviço responsável pelo roteamento inteligente de transações entre gateways
+ * 
+ * Implementa algoritmo de seleção baseado em múltiplos critérios:
+ * - Prioridade configurada
+ * - Taxa de sucesso histórica
+ * - Tempo médio de resposta
+ * - Status de saúde (health check)
+ * - Limites de processamento
+ * 
+ * @author Luiz Gustavo Finotello
  */
 @Service
 public class GatewayRoutingService {
+
+    private static final Logger logger = LoggerFactory.getLogger(GatewayRoutingService.class);
 
     @Autowired
     private GatewayRepository gatewayRepository;
@@ -25,74 +39,108 @@ public class GatewayRoutingService {
 
     /**
      * Seleciona o melhor gateway para processar uma transação
+     * 
+     * @param lojista Lojista que está processando a transação
+     * @param valor Valor da transação em centavos
+     * @return Gateway selecionado
+     * @throws RuntimeException se nenhum gateway disponível
      */
-    public Gateway selecionarMelhorGateway(Lojista lojista, BigDecimal valor, String metodoPagamento) {
-        List<Gateway> gatewaysDisponiveis = gatewayRepository.findByLojistaAndAtivoTrueAndStatusOrderByPrioridadeAsc(
-            lojista, "ACTIVE");
+    public Gateway selecionarMelhorGateway(Lojista lojista, Long valor) {
+        logger.debug("Selecionando gateway para lojista {} e valor {}", lojista.getId(), valor);
+
+        // Buscar todos os gateways ativos
+        List<Gateway> gatewaysDisponiveis = buscarGatewaysDisponiveis();
 
         if (gatewaysDisponiveis.isEmpty()) {
-            throw new RuntimeException("Nenhum gateway disponível para o lojista");
+            logger.error("Nenhum gateway disponível no sistema");
+            throw new RuntimeException("Nenhum gateway disponível para processar a transação");
         }
 
-        // Filtrar por método de pagamento suportado
-        gatewaysDisponiveis = gatewaysDisponiveis.stream()
-            .filter(g -> suportaMetodoPagamento(g, metodoPagamento))
-            .collect(Collectors.toList());
+        // Filtrar gateways que podem processar o valor
+        gatewaysDisponiveis = filtrarPorLimites(gatewaysDisponiveis, valor);
 
         if (gatewaysDisponiveis.isEmpty()) {
-            throw new RuntimeException("Nenhum gateway suporta o método de pagamento: " + metodoPagamento);
+            logger.error("Nenhum gateway com capacidade para processar valor {}", valor);
+            throw new RuntimeException("Nenhum gateway com capacidade disponível para o valor solicitado");
         }
 
-        // Filtrar por limites de valor
-        gatewaysDisponiveis = gatewaysDisponiveis.stream()
-            .filter(g -> valor.compareTo(g.getValorMinimo()) >= 0 && 
-                        valor.compareTo(g.getValorMaximo()) <= 0)
-            .collect(Collectors.toList());
+        // Aplicar algoritmo de seleção inteligente
+        Gateway gatewaySelecionado = aplicarAlgoritmoSelecao(gatewaysDisponiveis, valor);
 
-        if (gatewaysDisponiveis.isEmpty()) {
-            throw new RuntimeException("Valor fora dos limites dos gateways disponíveis");
-        }
+        logger.info("Gateway selecionado: {} (score: {})", 
+            gatewaySelecionado.getCodigo(), 
+            calcularScore(gatewaySelecionado));
 
-        // Algoritmo de seleção inteligente
-        return aplicarAlgoritmoSelecao(gatewaysDisponiveis, valor);
+        // Registrar decisão de roteamento
+        registrarDecisaoRoteamento(lojista, gatewaySelecionado, valor, gatewaysDisponiveis.size());
+
+        return gatewaySelecionado;
     }
 
     /**
-     * Seleciona gateway para fallback em caso de falha
+     * Seleciona gateway alternativo em caso de falha (fallback)
+     * 
+     * @param lojista Lojista que está processando a transação
+     * @param gatewayFalhou Gateway que falhou
+     * @param valor Valor da transação em centavos
+     * @return Gateway alternativo ou null se não houver
      */
-    public Gateway selecionarGatewayFallback(Lojista lojista, Gateway gatewayFalhou, 
-                                           BigDecimal valor, String metodoPagamento) {
-        List<Gateway> gatewaysDisponiveis = gatewayRepository.findByLojistaAndAtivoTrueAndStatusOrderByPrioridadeAsc(
-            lojista, "ACTIVE");
+    public Gateway selecionarGatewayFallback(Lojista lojista, Gateway gatewayFalhou, Long valor) {
+        logger.warn("Selecionando gateway fallback. Gateway falho: {}", gatewayFalhou.getCodigo());
+
+        List<Gateway> gatewaysDisponiveis = buscarGatewaysDisponiveis();
 
         // Remover o gateway que falhou
         gatewaysDisponiveis = gatewaysDisponiveis.stream()
             .filter(g -> !g.getId().equals(gatewayFalhou.getId()))
-            .filter(g -> suportaMetodoPagamento(g, metodoPagamento))
-            .filter(g -> valor.compareTo(g.getValorMinimo()) >= 0 && 
-                        valor.compareTo(g.getValorMaximo()) <= 0)
             .collect(Collectors.toList());
 
+        // Filtrar por limites
+        gatewaysDisponiveis = filtrarPorLimites(gatewaysDisponiveis, valor);
+
         if (gatewaysDisponiveis.isEmpty()) {
-            return null; // Sem opções de fallback
+            logger.error("Nenhum gateway disponível para fallback");
+            return null;
         }
 
-        // Para fallback, priorizar estabilidade sobre custo
-        return gatewaysDisponiveis.stream()
-            .filter(g -> g.getTaxaSucesso() > 95.0) // Alta taxa de sucesso
-            .min(Comparator.comparing(Gateway::getTempoMedioResposta))
+        // Para fallback, priorizar estabilidade (alta taxa de sucesso)
+        Gateway gatewayFallback = gatewaysDisponiveis.stream()
+            .filter(g -> g.getTaxaSucesso() > 95.0)
+            .max(Comparator.comparing(Gateway::getTaxaSucesso))
             .orElse(gatewaysDisponiveis.get(0));
+
+        logger.info("Gateway fallback selecionado: {}", gatewayFallback.getCodigo());
+
+        return gatewayFallback;
     }
 
     /**
-     * Aplica algoritmo de seleção baseado em múltiplos critérios
+     * Busca gateways disponíveis para processamento
      */
-    private Gateway aplicarAlgoritmoSelecao(List<Gateway> gateways, BigDecimal valor) {
-        // Calcular score para cada gateway
+    private List<Gateway> buscarGatewaysDisponiveis() {
+        return gatewayRepository.findAll().stream()
+            .filter(g -> "ACTIVE".equals(g.getStatus().name()))
+            .filter(g -> g.isHealthy())
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Filtra gateways que podem processar o valor solicitado
+     */
+    private List<Gateway> filtrarPorLimites(List<Gateway> gateways, Long valor) {
+        return gateways.stream()
+            .filter(g -> g.podeProcessarTransacao(valor))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Aplica algoritmo de seleção baseado em score
+     */
+    private Gateway aplicarAlgoritmoSelecao(List<Gateway> gateways, Long valor) {
         Map<Gateway, Double> scores = new HashMap<>();
 
         for (Gateway gateway : gateways) {
-            double score = calcularScore(gateway, valor);
+            double score = calcularScore(gateway);
             scores.put(gateway, score);
         }
 
@@ -105,148 +153,219 @@ public class GatewayRoutingService {
 
     /**
      * Calcula score do gateway baseado em múltiplos fatores
+     * 
+     * Fatores considerados:
+     * - Taxa de sucesso (40%)
+     * - Tempo de resposta (30%)
+     * - Prioridade configurada (20%)
+     * - Capacidade disponível (10%)
      */
-    private double calcularScore(Gateway gateway, BigDecimal valor) {
+    private double calcularScore(Gateway gateway) {
         double score = 0.0;
 
         // Fator 1: Taxa de sucesso (peso 40%)
-        score += gateway.getTaxaSucesso() * 0.4;
+        // Taxa de 100% = 40 pontos, 0% = 0 pontos
+        score += (gateway.getTaxaSucesso() / 100.0) * 40.0;
 
-        // Fator 2: Custo (peso 30%) - menor custo = maior score
-        BigDecimal custoTransacao = calcularCustoTransacao(gateway, valor);
-        double custoPorcentual = custoTransacao.divide(valor, 4, BigDecimal.ROUND_HALF_UP)
-                                              .multiply(BigDecimal.valueOf(100)).doubleValue();
-        score += (10.0 - Math.min(custoPorcentual, 10.0)) * 3.0; // Normalizar para 0-30
+        // Fator 2: Tempo de resposta (peso 30%)
+        // Tempo < 500ms = 30 pontos, > 5000ms = 0 pontos
+        double tempoScore = Math.max(0, 30.0 - (gateway.getTempoRespostaMedio() / 1000.0) * 6.0);
+        score += Math.min(tempoScore, 30.0);
 
-        // Fator 3: Tempo de resposta (peso 20%) - menor tempo = maior score
-        double tempoScore = Math.max(0, 20.0 - (gateway.getTempoMedioResposta() / 100.0));
-        score += Math.min(tempoScore, 20.0);
+        // Fator 3: Prioridade configurada (peso 20%)
+        // Prioridade 1 = 20 pontos, prioridade 100 = 0 pontos
+        score += (100.0 - gateway.getPrioridade()) / 100.0 * 20.0;
 
-        // Fator 4: Prioridade configurada (peso 10%)
-        score += (10.0 - gateway.getPrioridade()) * 1.0;
+        // Fator 4: Capacidade disponível (peso 10%)
+        // Quanto mais capacidade livre, melhor
+        double percentualUtilizado = gateway.getPercentualLimiteUtilizado();
+        score += (100.0 - percentualUtilizado) / 100.0 * 10.0;
 
         return score;
     }
 
     /**
-     * Calcula custo da transação para um gateway específico
+     * Registra decisão de roteamento no log
      */
-    private BigDecimal calcularCustoTransacao(Gateway gateway, BigDecimal valor) {
-        BigDecimal custoFixo = gateway.getTaxaFixa() != null ? gateway.getTaxaFixa() : BigDecimal.ZERO;
-        BigDecimal custoPercentual = valor.multiply(gateway.getTaxaPercentual().divide(BigDecimal.valueOf(100)));
-        return custoFixo.add(custoPercentual);
+    private void registrarDecisaoRoteamento(Lojista lojista, Gateway gateway, Long valor, int gatewaysAvaliados) {
+        LogTransacao log = new LogTransacao();
+        log.setGateway(gateway);
+        log.setAcao("ROUTING_DECISION");
+        log.setStatusNovo("ROUTED");
+        log.setMetadata(String.format(
+            "{\"lojista_id\":\"%s\",\"gateway_selecionado\":\"%s\",\"valor\":%d,\"gateways_avaliados\":%d,\"score\":%.2f}",
+            lojista.getId(),
+            gateway.getCodigo(),
+            valor,
+            gatewaysAvaliados,
+            calcularScore(gateway)
+        ));
+        log.setCreatedAt(ZonedDateTime.now());
+
+        logTransacaoRepository.save(log);
     }
 
     /**
-     * Verifica se gateway suporta método de pagamento
-     */
-    private boolean suportaMetodoPagamento(Gateway gateway, String metodoPagamento) {
-        if (gateway.getMetodosPagamento() == null) {
-            return true; // Se não especificado, assume que suporta todos
-        }
-        
-        // Assumindo que métodos são armazenados como JSON array string
-        return gateway.getMetodosPagamento().toLowerCase().contains(metodoPagamento.toLowerCase());
-    }
-
-    /**
-     * Verifica saúde dos gateways e atualiza status
+     * Verifica saúde de todos os gateways e atualiza status
+     * 
+     * Este método deve ser executado periodicamente (ex: a cada 1 minuto)
      */
     public void verificarSaudeGateways() {
+        logger.debug("Iniciando verificação de saúde dos gateways");
+
         List<Gateway> gateways = gatewayRepository.findAll();
-        
+
         for (Gateway gateway : gateways) {
-            boolean saudavel = avaliarSaudeGateway(gateway);
-            
-            if (!saudavel && gateway.getStatus().equals("ACTIVE")) {
-                gateway.marcarIndisponivel("Health check failed");
+            try {
+                boolean saudavel = avaliarSaudeGateway(gateway);
+
+                if (saudavel) {
+                    gateway.atualizarHealthCheck(com.pip.model.HealthStatus.UP);
+                } else {
+                    gateway.atualizarHealthCheck(com.pip.model.HealthStatus.DOWN);
+                }
+
                 gatewayRepository.save(gateway);
-            } else if (saudavel && gateway.getStatus().equals("INACTIVE")) {
-                gateway.marcarDisponivel();
+
+                logger.debug("Gateway {} - Status: {}", gateway.getCodigo(), gateway.getHealthStatus());
+
+            } catch (Exception e) {
+                logger.error("Erro ao verificar saúde do gateway {}: {}", gateway.getCodigo(), e.getMessage());
+                gateway.atualizarHealthCheck(com.pip.model.HealthStatus.UNKNOWN);
                 gatewayRepository.save(gateway);
             }
         }
+
+        logger.info("Verificação de saúde concluída. Total de gateways: {}", gateways.size());
     }
 
     /**
      * Avalia saúde de um gateway específico
+     * 
+     * Critérios:
+     * - Taxa de sucesso > 90%
+     * - Tempo médio de resposta < 5 segundos
+     * - Última verificação há menos de 5 minutos
      */
     private boolean avaliarSaudeGateway(Gateway gateway) {
-        ZonedDateTime ultimaHora = ZonedDateTime.now().minusHours(1);
-        
-        // Critérios de saúde:
-        // 1. Taxa de sucesso > 90% na última hora
-        // 2. Tempo médio de resposta < 5 segundos
-        // 3. Sem falhas críticas nos últimos 15 minutos
-        
-        return gateway.getTaxaSucesso() > 90.0 && 
-               gateway.getTempoMedioResposta() < 5000 &&
-               !temFalhasCriticasRecentes(gateway, ZonedDateTime.now().minusMinutes(15));
-    }
+        // Critério 1: Taxa de sucesso
+        if (gateway.getTaxaSucesso() < 90.0) {
+            logger.warn("Gateway {} com taxa de sucesso baixa: {}%", 
+                gateway.getCodigo(), gateway.getTaxaSucesso());
+            return false;
+        }
 
-    /**
-     * Verifica se há falhas críticas recentes
-     */
-    private boolean temFalhasCriticasRecentes(Gateway gateway, ZonedDateTime desde) {
-        // Implementação simplificada - em produção consultar logs específicos
-        return false;
+        // Critério 2: Tempo de resposta
+        if (gateway.getTempoRespostaMedio() > 5000) {
+            logger.warn("Gateway {} com tempo de resposta alto: {}ms", 
+                gateway.getCodigo(), gateway.getTempoRespostaMedio());
+            return false;
+        }
+
+        // Critério 3: Última verificação (se houver)
+        if (gateway.getLastHealthCheck() != null) {
+            ZonedDateTime limiteVerificacao = ZonedDateTime.now().minusMinutes(5);
+            if (gateway.getLastHealthCheck().isBefore(limiteVerificacao)) {
+                logger.warn("Gateway {} sem verificação recente", gateway.getCodigo());
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
      * Obtém estatísticas de roteamento
      */
-    public Map<String, Object> obterEstatisticasRoteamento(Lojista lojista, ZonedDateTime inicio, ZonedDateTime fim) {
+    public Map<String, Object> obterEstatisticasRoteamento() {
         Map<String, Object> stats = new HashMap<>();
-        
-        List<Gateway> gateways = gatewayRepository.findByLojista(lojista);
-        
+
+        List<Gateway> gateways = gatewayRepository.findAll();
+
         for (Gateway gateway : gateways) {
             Map<String, Object> gatewayStats = new HashMap<>();
+            gatewayStats.put("codigo", gateway.getCodigo());
+            gatewayStats.put("status", gateway.getStatus().name());
+            gatewayStats.put("healthStatus", gateway.getHealthStatus().name());
             gatewayStats.put("totalTransacoes", gateway.getTotalTransacoes());
+            gatewayStats.put("totalSucesso", gateway.getTotalSucesso());
+            gatewayStats.put("totalFalhas", gateway.getTotalFalhas());
             gatewayStats.put("taxaSucesso", gateway.getTaxaSucesso());
-            gatewayStats.put("tempoMedioResposta", gateway.getTempoMedioResposta());
-            gatewayStats.put("status", gateway.getStatus());
-            
-            stats.put(gateway.getNome(), gatewayStats);
+            gatewayStats.put("tempoRespostaMedio", gateway.getTempoRespostaMedio());
+            gatewayStats.put("volumeProcessadoHoje", gateway.getVolumeProcessadoHoje());
+            gatewayStats.put("limiteDiario", gateway.getLimiteDiario());
+            gatewayStats.put("percentualUtilizado", gateway.getPercentualLimiteUtilizado());
+            gatewayStats.put("score", calcularScore(gateway));
+
+            stats.put(gateway.getCodigo(), gatewayStats);
         }
-        
+
         return stats;
     }
 
     /**
-     * Força rebalanceamento de carga entre gateways
+     * Rebalanceia prioridades dos gateways baseado em performance
+     * 
+     * Este método deve ser executado periodicamente (ex: a cada 1 hora)
      */
-    public void rebalancearGateways(Lojista lojista) {
-        List<Gateway> gateways = gatewayRepository.findByLojistaAndAtivoTrue(lojista);
-        
-        // Algoritmo simples de rebalanceamento baseado em carga atual
+    public void rebalancearGateways() {
+        logger.info("Iniciando rebalanceamento de gateways");
+
+        List<Gateway> gateways = gatewayRepository.findAll();
+
         for (Gateway gateway : gateways) {
-            // Ajustar prioridade baseado na performance recente
-            if (gateway.getTaxaSucesso() > 98.0 && gateway.getTempoMedioResposta() < 1000) {
-                // Gateway performático - aumentar prioridade
-                gateway.setPrioridade(Math.max(1, gateway.getPrioridade() - 1));
-            } else if (gateway.getTaxaSucesso() < 95.0 || gateway.getTempoMedioResposta() > 3000) {
-                // Gateway com problemas - diminuir prioridade
-                gateway.setPrioridade(Math.min(10, gateway.getPrioridade() + 1));
+            int prioridadeAtual = gateway.getPrioridade();
+            int novaPrioridade = calcularNovaPrioridade(gateway);
+
+            if (prioridadeAtual != novaPrioridade) {
+                logger.info("Ajustando prioridade do gateway {} de {} para {}", 
+                    gateway.getCodigo(), prioridadeAtual, novaPrioridade);
+                
+                gateway.setPrioridade(novaPrioridade);
+                gatewayRepository.save(gateway);
             }
-            
-            gatewayRepository.save(gateway);
         }
+
+        logger.info("Rebalanceamento concluído");
     }
 
     /**
-     * Simula processamento para teste de carga
+     * Calcula nova prioridade baseada em performance
      */
-    public Gateway selecionarGatewayParaTeste(Lojista lojista) {
-        List<Gateway> gateways = gatewayRepository.findByLojistaAndAtivoTrueAndStatus(lojista, "ACTIVE");
-        
-        if (gateways.isEmpty()) {
-            return null;
+    private int calcularNovaPrioridade(Gateway gateway) {
+        int prioridade = gateway.getPrioridade();
+
+        // Gateway com excelente performance: diminuir prioridade (número menor = maior prioridade)
+        if (gateway.getTaxaSucesso() > 98.0 && gateway.getTempoRespostaMedio() < 1000) {
+            prioridade = Math.max(1, prioridade - 5);
         }
-        
-        // Para testes, usar round-robin simples
-        Random random = new Random();
-        return gateways.get(random.nextInt(gateways.size()));
+        // Gateway com boa performance: manter ou melhorar levemente
+        else if (gateway.getTaxaSucesso() > 95.0 && gateway.getTempoRespostaMedio() < 2000) {
+            prioridade = Math.max(1, prioridade - 1);
+        }
+        // Gateway com performance ruim: aumentar prioridade (número maior = menor prioridade)
+        else if (gateway.getTaxaSucesso() < 90.0 || gateway.getTempoRespostaMedio() > 3000) {
+            prioridade = Math.min(100, prioridade + 5);
+        }
+
+        return prioridade;
+    }
+
+    /**
+     * Reseta volumes processados diariamente
+     * 
+     * Este método deve ser executado diariamente à meia-noite
+     */
+    public void resetarVolumesProcessados() {
+        logger.info("Resetando volumes processados dos gateways");
+
+        List<Gateway> gateways = gatewayRepository.findAll();
+
+        for (Gateway gateway : gateways) {
+            gateway.resetarVolumeProcessadoHoje();
+            gatewayRepository.save(gateway);
+        }
+
+        logger.info("Volumes resetados. Total de gateways: {}", gateways.size());
     }
 }
-
