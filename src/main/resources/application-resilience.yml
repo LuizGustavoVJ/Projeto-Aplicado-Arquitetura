@@ -1,0 +1,81 @@
+# Configurações do Resilience4j para resiliência de gateways
+# Autor: Luiz Gustavo Finotello
+
+resilience4j:
+  # Circuit Breaker - Protege contra falhas em cascata
+  circuitbreaker:
+    instances:
+      gatewayService:
+        # Número de chamadas para calcular taxa de falha
+        slidingWindowSize: 10
+        # Tipo de janela deslizante (COUNT_BASED ou TIME_BASED)
+        slidingWindowType: COUNT_BASED
+        # Número mínimo de chamadas antes de calcular taxa de falha
+        minimumNumberOfCalls: 5
+        # Percentual de falha para abrir o circuito
+        failureRateThreshold: 50
+        # Tempo que o circuito fica aberto antes de tentar half-open
+        waitDurationInOpenState: 30s
+        # Número de chamadas permitidas em half-open
+        permittedNumberOfCallsInHalfOpenState: 3
+        # Transição automática de open para half-open
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        # Exceções que devem ser ignoradas
+        ignoreExceptions:
+          - java.lang.IllegalArgumentException
+        # Exceções que devem ser registradas como falha
+        recordExceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+
+  # Retry - Tenta novamente em caso de falhas temporárias
+  retry:
+    instances:
+      gatewayService:
+        # Número máximo de tentativas (incluindo a primeira)
+        maxAttempts: 3
+        # Tempo de espera entre tentativas
+        waitDuration: 1s
+        # Habilitar backoff exponencial
+        enableExponentialBackoff: true
+        # Multiplicador do backoff exponencial
+        exponentialBackoffMultiplier: 2
+        # Exceções que devem acionar retry
+        retryExceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+        # Exceções que NÃO devem acionar retry
+        ignoreExceptions:
+          - java.lang.IllegalArgumentException
+          - java.lang.IllegalStateException
+
+  # Rate Limiter - Limita número de chamadas por período
+  ratelimiter:
+    instances:
+      gatewayService:
+        # Período de limite
+        limitRefreshPeriod: 1s
+        # Número de permissões por período
+        limitForPeriod: 100
+        # Timeout para aguardar permissão
+        timeoutDuration: 5s
+
+  # Time Limiter - Limita tempo de espera
+  timelimiter:
+    instances:
+      gatewayService:
+        # Timeout para chamadas
+        timeoutDuration: 30s
+        # Cancelar chamada em caso de timeout
+        cancelRunningFuture: true
+
+  # Bulkhead - Limita número de chamadas concorrentes
+  bulkhead:
+    instances:
+      gatewayService:
+        # Número máximo de chamadas concorrentes
+        maxConcurrentCalls: 50
+        # Tempo máximo de espera para adquirir permissão
+        maxWaitDuration: 500ms

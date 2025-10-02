@@ -1,6 +1,8 @@
 package com.pip.controller;
 
 import com.pip.dto.AuthorizationRequest;
+import com.pip.dto.CaptureRequest;
+import com.pip.dto.VoidRequest;
 import com.pip.dto.PaymentResponse;
 import com.pip.dto.GatewayResponse;
 import com.pip.service.PagamentoService;
@@ -11,11 +13,15 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -83,49 +89,112 @@ public class PagamentoController {
     @PostMapping("/{id}/capture")
     @Operation(summary = "Captura um pagamento autorizado", 
                description = "Efetiva a cobrança de um pagamento que foi previamente autorizado")
-    public ResponseEntity<PaymentResponse> capturarPagamento(@PathVariable UUID id) {
-        // TODO: Implementar lógica de captura na próxima iteração
-        logger.info("Requisição de captura recebida para ID: {}", id);
+    public ResponseEntity<PaymentResponse> capturarPagamento(
+            @PathVariable UUID id, 
+            @Valid @RequestBody CaptureRequest request) {
         
-        PaymentResponse response = new PaymentResponse();
-        response.setId(id.toString());
-        response.setStatus("captured");
-        response.setMessage("Captura será implementada na próxima versão");
-        response.setCreatedAt(LocalDateTime.now());
+        logger.info("Requisição de captura recebida para ID: {}, Valor: {}", id, request.getAmount());
         
-        return ResponseEntity.ok(response);
+        try {
+            PaymentResponse response = pagamentoService.capturarPagamento(id, request);
+            logger.info("Captura processada com sucesso - ID: {}", id);
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            logger.warn("Erro de validação na captura: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                .body(createErrorResponse("VALIDATION_ERROR", e.getMessage()));
+                
+        } catch (IllegalStateException e) {
+            logger.warn("Estado inválido para captura: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(createErrorResponse("INVALID_STATE", e.getMessage()));
+                
+        } catch (Exception e) {
+            logger.error("Erro interno na captura", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("INTERNAL_ERROR", "Erro interno do servidor"));
+        }
     }
 
     @PostMapping("/{id}/void")
     @Operation(summary = "Cancela um pagamento autorizado", 
                description = "Anula uma autorização de pagamento que ainda não foi capturada")
-    public ResponseEntity<PaymentResponse> cancelarPagamento(@PathVariable UUID id) {
-        // TODO: Implementar lógica de cancelamento na próxima iteração
-        logger.info("Requisição de cancelamento recebida para ID: {}", id);
+    public ResponseEntity<PaymentResponse> cancelarPagamento(
+            @PathVariable UUID id, 
+            @Valid @RequestBody VoidRequest request) {
         
-        PaymentResponse response = new PaymentResponse();
-        response.setId(id.toString());
-        response.setStatus("voided");
-        response.setMessage("Cancelamento será implementado na próxima versão");
-        response.setCreatedAt(LocalDateTime.now());
+        logger.info("Requisição de cancelamento recebida para ID: {}, Motivo: {}", id, request.getReason());
         
-        return ResponseEntity.ok(response);
+        try {
+            PaymentResponse response = pagamentoService.cancelarPagamento(id, request);
+            logger.info("Cancelamento processado com sucesso - ID: {}", id);
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            logger.warn("Erro de validação no cancelamento: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                .body(createErrorResponse("VALIDATION_ERROR", e.getMessage()));
+                
+        } catch (IllegalStateException e) {
+            logger.warn("Estado inválido para cancelamento: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(createErrorResponse("INVALID_STATE", e.getMessage()));
+                
+        } catch (Exception e) {
+            logger.error("Erro interno no cancelamento", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("INTERNAL_ERROR", "Erro interno do servidor"));
+        }
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Consulta um pagamento", 
                description = "Recupera os detalhes e o status atual de um pagamento específico")
     public ResponseEntity<PaymentResponse> consultarPagamento(@PathVariable UUID id) {
-        // TODO: Implementar lógica de consulta na próxima iteração
         logger.info("Consulta de pagamento recebida para ID: {}", id);
         
-        PaymentResponse response = new PaymentResponse();
-        response.setId(id.toString());
-        response.setStatus("unknown");
-        response.setMessage("Consulta será implementada na próxima versão");
-        response.setCreatedAt(LocalDateTime.now());
+        try {
+            PaymentResponse response = pagamentoService.consultarPagamento(id);
+            logger.info("Consulta processada com sucesso - ID: {}", id);
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            logger.warn("Pagamento não encontrado: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+            
+        } catch (Exception e) {
+            logger.error("Erro interno na consulta", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("INTERNAL_ERROR", "Erro interno do servidor"));
+        }
+    }
+
+    @GetMapping
+    @Operation(summary = "Lista pagamentos com filtros", 
+               description = "Recupera uma lista paginada de pagamentos com filtros opcionais")
+    public ResponseEntity<Page<PaymentResponse>> listarPagamentos(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String gateway,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         
-        return ResponseEntity.ok(response);
+        logger.info("Listagem de pagamentos - Status: {}, Gateway: {}, Página: {}", status, gateway, page);
+        
+        try {
+            // TODO: Implementar filtros e paginação na próxima iteração
+            // Por enquanto, retorna uma página vazia
+            Pageable pageable = PageRequest.of(page, size);
+            Page<PaymentResponse> emptyPage = Page.empty(pageable);
+            
+            return ResponseEntity.ok(emptyPage);
+            
+        } catch (Exception e) {
+            logger.error("Erro interno na listagem", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
     
     /**
