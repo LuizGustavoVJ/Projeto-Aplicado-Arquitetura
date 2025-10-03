@@ -250,7 +250,7 @@ public class WebhookService {
         Map<String, Object> transactionData = new HashMap<>();
         transactionData.put("transaction_id", transacao.getTransactionId());
         transactionData.put("gateway_transaction_id", transacao.getGatewayTransactionId());
-        transactionData.put("status", transacao.getStatus().name());
+        transactionData.put("status", transacao.getStatus());
         transactionData.put("amount", transacao.getValor());
         transactionData.put("currency", transacao.getMoeda());
         transactionData.put("installments", transacao.getParcelas());
