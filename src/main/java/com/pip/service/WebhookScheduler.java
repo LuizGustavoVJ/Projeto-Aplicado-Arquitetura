@@ -28,7 +28,7 @@ public class WebhookScheduler {
     private static final Logger logger = LoggerFactory.getLogger(WebhookScheduler.class);
 
     @Autowired
-    private WebhookRepository webhookEventRepository;
+    private WebhookEventRepository webhookEventRepository;
 
     @Autowired
     private WebhookService webhookService;
