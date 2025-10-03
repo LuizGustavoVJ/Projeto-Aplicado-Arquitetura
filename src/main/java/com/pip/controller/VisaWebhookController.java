@@ -93,18 +93,18 @@ public class VisaWebhookController {
 
         switch (eventType) {
             case "transaction.completed":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[VISA WEBHOOK] Transação completada: {}", transactionId);
                 break;
 
             case "transaction.failed":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 transacao.setErrorMessage((String) transaction.get("statusMessage"));
                 logger.info("[VISA WEBHOOK] Transação falhou: {}", transactionId);
                 break;
 
             case "transaction.reversed":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[VISA WEBHOOK] Transação revertida: {}", transactionId);
                 break;
 

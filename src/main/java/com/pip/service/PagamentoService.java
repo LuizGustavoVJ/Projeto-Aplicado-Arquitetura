@@ -71,7 +71,7 @@ public class PagamentoService {
         transacao.setMoeda(request.getCurrency());
         transacao.setParcelas(request.getInstallments());
         transacao.setDescricao(request.getDescription());
-        transacao.setStatus(TransactionStatus.PENDING);
+        transacao.setStatus(TransactionStatus.PENDING.toString());
         transacao.setCreatedAt(ZonedDateTime.now());
 
         // Dados do cliente
@@ -100,7 +100,7 @@ public class PagamentoService {
 
             // Atualizar transação com resposta
             if (response.isSuccess()) {
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 transacao.setGatewayTransactionId(response.getGatewayTransactionId());
                 transacao.setAuthorizationCode(response.getAuthorizationCode());
                 transacao.setNsu(response.getNsu());
@@ -113,7 +113,7 @@ public class PagamentoService {
                 webhookService.criarWebhook(lojista, transacao, "TRANSACTION_AUTHORIZED");
 
             } else {
-                transacao.setStatus(TransactionStatus.FAILED);
+                transacao.setStatus(TransactionStatus.FAILED.toString());
                 transacao.setErrorCode(response.getErrorCode());
                 transacao.setErrorMessage(response.getErrorMessage());
 
@@ -128,7 +128,7 @@ public class PagamentoService {
         } catch (Exception e) {
             logger.error("Erro ao autorizar pagamento: {}", e.getMessage(), e);
 
-            transacao.setStatus(TransactionStatus.FAILED);
+            transacao.setStatus(TransactionStatus.FAILED.toString());
             transacao.setErrorMessage(e.getMessage());
             transacao.setUpdatedAt(ZonedDateTime.now());
             transacaoRepository.save(transacao);
@@ -155,12 +155,12 @@ public class PagamentoService {
             .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
 
         // Validar status
-        if (transacao.getStatus() != TransactionStatus.AUTHORIZED) {
+        if (!transacao.getStatus().equals(TransactionStatus.AUTHORIZED.toString())) {
             throw new IllegalStateException("Transação não pode ser capturada. Status atual: " + transacao.getStatus());
         }
 
         // Validar valor
-        if (request.getAmount() > transacao.getValor()) {
+        if (request.getAmount().compareTo(BigDecimal.valueOf(transacao.getValor())) > 0) {
             throw new IllegalArgumentException("Valor da captura não pode ser maior que o valor autorizado");
         }
 
@@ -172,8 +172,8 @@ public class PagamentoService {
 
             // Atualizar transação
             if (response.isSuccess()) {
-                transacao.setStatus(TransactionStatus.CAPTURED);
-                transacao.setValorCapturado(request.getAmount());
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
+                transacao.setValorCapturado(request.getAmount().longValue());
                 transacao.setCapturedAt(ZonedDateTime.now());
 
                 registrarLog(transacao, "CAPTURE_SUCCESS", "Captura realizada com sucesso");
@@ -182,7 +182,7 @@ public class PagamentoService {
                 webhookService.criarWebhook(transacao.getLojista(), transacao, "TRANSACTION_CAPTURED");
 
             } else {
-                transacao.setStatus(TransactionStatus.FAILED);
+                transacao.setStatus(TransactionStatus.FAILED.toString());
                 transacao.setErrorCode(response.getErrorCode());
                 transacao.setErrorMessage(response.getErrorMessage());
 
@@ -197,7 +197,7 @@ public class PagamentoService {
         } catch (Exception e) {
             logger.error("Erro ao capturar pagamento: {}", e.getMessage(), e);
 
-            transacao.setStatus(TransactionStatus.FAILED);
+            transacao.setStatus(TransactionStatus.FAILED.toString());
             transacao.setErrorMessage(e.getMessage());
             transacao.setUpdatedAt(ZonedDateTime.now());
             transacaoRepository.save(transacao);
@@ -224,8 +224,8 @@ public class PagamentoService {
             .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
 
         // Validar status
-        if (transacao.getStatus() != TransactionStatus.AUTHORIZED && 
-            transacao.getStatus() != TransactionStatus.CAPTURED) {
+        if (!transacao.getStatus().equals(TransactionStatus.AUTHORIZED.toString()) && 
+            !transacao.getStatus().equals(TransactionStatus.CAPTURED.toString())) {
             throw new IllegalStateException("Transação não pode ser cancelada. Status atual: " + transacao.getStatus());
         }
 
@@ -237,7 +237,7 @@ public class PagamentoService {
 
             // Atualizar transação
             if (response.isSuccess()) {
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 transacao.setVoidReason(request.getReason());
                 transacao.setVoidedAt(ZonedDateTime.now());
 
@@ -284,8 +284,8 @@ public class PagamentoService {
             .orElseThrow(() -> new IllegalArgumentException("Transação não encontrada: " + transactionId));
 
         PaymentResponse response = new PaymentResponse();
-        response.setSuccess(transacao.getStatus() == TransactionStatus.AUTHORIZED || 
-                           transacao.getStatus() == TransactionStatus.CAPTURED);
+        response.setSuccess(transacao.getStatus().equals(TransactionStatus.AUTHORIZED || 
+                           transacao.getStatus().equals(TransactionStatus.CAPTURED);
         response.setStatus(transacao.getStatus().name());
         response.setTransactionId(transacao.getTransactionId());
         response.setGatewayTransactionId(transacao.getGatewayTransactionId());

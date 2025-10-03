@@ -83,22 +83,22 @@ public class MastercardWebhookController {
 
         switch (eventType.toUpperCase()) {
             case "AUTHORIZED":
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[MASTERCARD WEBHOOK] Transação autorizada: {}", orderId);
                 break;
 
             case "CAPTURED":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[MASTERCARD WEBHOOK] Transação capturada: {}", orderId);
                 break;
 
             case "REFUNDED":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[MASTERCARD WEBHOOK] Transação estornada: {}", orderId);
                 break;
 
             case "FAILED":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 transacao.setErrorMessage((String) transaction.get("error"));
                 logger.info("[MASTERCARD WEBHOOK] Transação falhou: {}", orderId);
                 break;

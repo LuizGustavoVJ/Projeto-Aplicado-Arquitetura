@@ -97,19 +97,19 @@ public class PagSeguroWebhookController {
 
         switch (eventType) {
             case "CHARGE.PAID":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[PAGSEGURO WEBHOOK] Pagamento confirmado: {}", chargeId);
                 break;
 
             case "CHARGE.DECLINED":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 transacao.setErrorMessage((String) chargeData.get("decline_reason"));
                 logger.info("[PAGSEGURO WEBHOOK] Pagamento negado: {}", chargeId);
                 break;
 
             case "CHARGE.CANCELED":
             case "CHARGE.REFUNDED":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[PAGSEGURO WEBHOOK] Pagamento cancelado/estornado: {}", chargeId);
                 break;
 

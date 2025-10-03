@@ -85,24 +85,24 @@ public class BoletoWebhookController {
 
         switch (eventType) {
             case "boleto.registered":
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[BOLETO WEBHOOK] Boleto registrado: {}", nossoNumero);
                 break;
 
             case "boleto.paid":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 Object valorPago = boleto.get("valorPago");
                 logger.info("[BOLETO WEBHOOK] Boleto pago: {} - Valor: R$ {}", 
                     nossoNumero, valorPago);
                 break;
 
             case "boleto.cancelled":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[BOLETO WEBHOOK] Boleto cancelado: {}", nossoNumero);
                 break;
 
             case "boleto.expired":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 transacao.setErrorMessage("Boleto vencido");
                 logger.info("[BOLETO WEBHOOK] Boleto vencido: {}", nossoNumero);
                 break;

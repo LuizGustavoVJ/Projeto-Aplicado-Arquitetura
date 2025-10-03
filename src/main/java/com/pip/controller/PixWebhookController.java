@@ -82,20 +82,20 @@ public class PixWebhookController {
 
         switch (eventType) {
             case "pix.received":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 String valor = pix.get("valor").toString();
                 logger.info("[PIX WEBHOOK] PIX recebido: {} - Valor: R$ {}", txid, valor);
                 break;
 
             case "pix.returned":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 String motivoDevolucao = (String) pix.get("devolucoes");
                 transacao.setErrorMessage(motivoDevolucao);
                 logger.info("[PIX WEBHOOK] PIX devolvido: {} - Motivo: {}", txid, motivoDevolucao);
                 break;
 
             case "pix.failed":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 String erro = (String) pix.get("erro");
                 transacao.setErrorMessage(erro);
                 logger.info("[PIX WEBHOOK] PIX falhou: {} - Erro: {}", txid, erro);

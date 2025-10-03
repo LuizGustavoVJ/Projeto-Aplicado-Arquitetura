@@ -344,6 +344,21 @@ public class WebhookService {
     }
 
     /**
+     * Cria webhook para transação (busca lojista automaticamente)
+     * 
+     * @param transacao Transação que gerou o evento
+     * @param evento Tipo do evento
+     */
+    public WebhookEvent criarWebhookParaTransacao(Transacao transacao, String evento) {
+        Lojista lojista = transacao.getLojista();
+        if (lojista == null) {
+            logger.warn("Transação {} não tem lojista associado", transacao.getId());
+            return null;
+        }
+        return criarWebhook(lojista, transacao, evento);
+    }
+
+    /**
      * Notifica o lojista sobre uma transação via webhook
      * 
      * @param transacao Transação a ser notificada

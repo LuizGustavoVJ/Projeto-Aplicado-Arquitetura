@@ -106,17 +106,17 @@ public class MercadoPagoWebhookController {
 
             case "payment.updated":
             case "payment.authorized":
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[MERCADOPAGO WEBHOOK] Pagamento autorizado: {}", paymentId);
                 break;
 
             case "payment.captured":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[MERCADOPAGO WEBHOOK] Pagamento capturado: {}", paymentId);
                 break;
 
             case "payment.refunded":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[MERCADOPAGO WEBHOOK] Pagamento estornado: {}", paymentId);
                 break;
 
