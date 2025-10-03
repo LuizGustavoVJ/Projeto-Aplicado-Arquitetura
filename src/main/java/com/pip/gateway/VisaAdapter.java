@@ -1,10 +1,6 @@
 package com.pip.gateway;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pip.dto.AuthorizationRequest;
-import com.pip.dto.CaptureRequest;
-import com.pip.dto.VoidRequest;
-import com.pip.dto.PaymentResponse;
+import com.pip.dto.*;
 import com.pip.model.Gateway;
 import com.pip.model.Transacao;
 import org.slf4j.Logger;
@@ -12,35 +8,41 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
- * Adaptador REAL para integração com Visa
+ * Adaptador para Visa Direct - Funds Transfer API
  * 
- * Implementa comunicação com API Visa seguindo documentação oficial:
- * https://developer.visa.com/capabilities/visa_direct
+ * ATENÇÃO: Este adaptador requer configuração adicional de infraestrutura:
  * 
- * Características:
- * - Autenticação via Certificate
- * - Ambiente Sandbox: https://sandbox.api.visa.com/visadirect
- * - Ambiente Produção: https://api.visa.com/visadirect
- * - Suporta: Autorização, Captura, Cancelamento
+ * 1. **Certificado Digital mTLS (Mutual TLS)**
+ *    - Obter certificado através do Visa Developer Portal
+ *    - Configurar keystore e truststore no RestTemplate
+ *    - Two-Way SSL authentication obrigatório
  * 
- * Segurança:
- * - TLS 1.2+ obrigatório
- * - PCI-DSS compliant
- * - Logs de auditoria completos
- * - Validação rigorosa de entrada
+ * 2. **Credenciamento Formal**
+ *    - Registro no programa Visa Direct
+ *    - Obtenção de acquiringBin (BIN do adquirente)
+ *    - Configuração de businessApplicationId
+ * 
+ * 3. **Configuração de Rede**
+ *    - Whitelist de IPs na Visa
+ *    - Configuração de firewall para mTLS
+ * 
+ * Documentação: https://developer.visa.com/capabilities/visa_direct/reference
+ * 
+ * APIs Implementadas:
+ * - POST /fundstransfer/v1/pushfundstransactions (AFT/OCT)
+ * - POST /fundstransfer/v1/pullfundstransactions
+ * - POST /fundstransfer/v1/reversefundstransactions (AFTR)
  * 
  * @author Luiz Gustavo Finotello
- * @version 2.0 - Integração Real
+ * @version 3.0 - Conforme Documentação Oficial (Requer mTLS)
  */
 @Component
 public class VisaAdapter implements GatewayAdapter {
@@ -48,29 +50,27 @@ public class VisaAdapter implements GatewayAdapter {
     private static final Logger logger = LoggerFactory.getLogger(VisaAdapter.class);
     private static final String GATEWAY_CODE = "VISA";
     
-    private static final String SANDBOX_URL = "https://sandbox.api.visa.com/visadirect";
-    private static final String PRODUCTION_URL = "https://api.visa.com/visadirect";
+    private static final String SANDBOX_URL = "https://sandbox.api.visa.com";
+    private static final String PRODUCTION_URL = "https://api.visa.com";
 
     @Autowired
-    private RestTemplate restTemplate;
-
-    @Autowired
-    private ObjectMapper objectMapper;
+    private RestTemplate restTemplate; // DEVE ser configurado com mTLS
 
     @Override
     public PaymentResponse authorize(Gateway gateway, AuthorizationRequest request, Transacao transacao) {
-        logger.info("[VISA] Iniciando autorização - TransactionID: {}", transacao.getTransactionId());
+        logger.warn("[VISA] ATENÇÃO: Visa Direct requer mTLS. Verifique configuração de certificados.");
+        logger.info("[VISA] Iniciando Push Funds Transaction - TransactionID: {}", transacao.getTransactionId());
         
         try {
-            validateRequest(request);
+            validateRequest(request, gateway);
             
-            Map<String, Object> payload = buildAuthorizationPayload(request, transacao);
+            Map<String, Object> payload = buildPushFundsPayload(request, transacao, gateway);
             HttpHeaders headers = buildHeaders(gateway);
             
-            String url = getBaseUrl(gateway) + "/payments";
+            String url = getBaseUrl(gateway) + "/fundstransfer/v1/pushfundstransactions";
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
             
-            logger.debug("[VISA] Enviando requisição para: {}", url);
+            logger.debug("[VISA] Enviando Push Funds para: {}", url);
             
             ResponseEntity<Map> response = restTemplate.exchange(
                 url,
@@ -79,87 +79,47 @@ public class VisaAdapter implements GatewayAdapter {
                 Map.class
             );
 
-            return processAuthorizationResponse(response, transacao);
+            return processPushFundsResponse(response, transacao);
 
-        } catch (HttpClientErrorException e) {
-            logger.error("[VISA] Erro 4xx na autorização: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return createErrorResponse("AUTHORIZATION_FAILED", "Erro na autorização: " + e.getMessage());
-        } catch (HttpServerErrorException e) {
-            logger.error("[VISA] Erro 5xx na autorização: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return createErrorResponse("GATEWAY_ERROR", "Erro no gateway: " + e.getMessage());
         } catch (Exception e) {
-            logger.error("[VISA] Erro inesperado na autorização", e);
-            return createErrorResponse("SYSTEM_ERROR", "Erro no sistema: " + e.getMessage());
+            logger.error("[VISA] Erro na autorização. Verifique: 1) Certificado mTLS 2) Credenciamento 3) BIN", e);
+            return createErrorResponse("MTLS_OR_CONFIG_ERROR", 
+                "Erro: Verifique certificado mTLS e credenciamento Visa Direct. " + e.getMessage());
         }
     }
 
     @Override
     public PaymentResponse capture(Gateway gateway, CaptureRequest request, Transacao transacao) {
-        logger.info("[VISA] Iniciando captura - TransactionID: {}", transacao.getTransactionId());
-
-        try {
-            if (transacao.getGatewayTransactionId() == null) {
-                return createErrorResponse("INVALID_TRANSACTION", "TransactionId não encontrado");
-            }
-            
-            HttpHeaders headers = buildHeaders(gateway);
-            String url = String.format("%s/payments/%s/capture",
-                getBaseUrl(gateway),
-                transacao.getGatewayTransactionId()
-            );
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("amount", request.getAmount());
-
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
-            
-            logger.debug("[VISA] Enviando captura para: {}", url);
-            
-            ResponseEntity<Map> response = restTemplate.exchange(
-                url,
-                HttpMethod.POST,
-                entity,
-                Map.class
-            );
-
-            if (response.getStatusCode() == HttpStatus.OK) {
-                PaymentResponse paymentResponse = new PaymentResponse();
-                paymentResponse.setSuccess(true);
-                paymentResponse.setStatus("CAPTURED");
-                paymentResponse.setTransactionId(transacao.getTransactionId());
-                paymentResponse.setGatewayTransactionId(transacao.getGatewayTransactionId());
-                paymentResponse.setTimestamp(ZonedDateTime.now());
-
-                logger.info("[VISA] Captura bem-sucedida: {}", transacao.getGatewayTransactionId());
-                return paymentResponse;
-            } else {
-                return createErrorResponse("CAPTURE_FAILED", "Falha na captura");
-            }
-
-        } catch (Exception e) {
-            logger.error("[VISA] Erro na captura", e);
-            return createErrorResponse("GATEWAY_ERROR", e.getMessage());
-        }
+        // Visa Direct não tem conceito de captura separada
+        // Push Funds Transaction já é final
+        logger.info("[VISA] Visa Direct não requer captura separada. Transação já é final.");
+        
+        PaymentResponse response = new PaymentResponse();
+        response.setSuccess(true);
+        response.setStatus("CAPTURED");
+        response.setTransactionId(transacao.getTransactionId());
+        response.setGatewayTransactionId(transacao.getGatewayTransactionId());
+        response.setTimestamp(ZonedDateTime.now());
+        
+        return response;
     }
 
     @Override
     public PaymentResponse voidTransaction(Gateway gateway, VoidRequest request, Transacao transacao) {
-        logger.info("[VISA] Iniciando cancelamento - TransactionID: {}", transacao.getTransactionId());
+        logger.info("[VISA] Iniciando Reverse Funds Transaction - TransactionID: {}", transacao.getTransactionId());
 
         try {
             if (transacao.getGatewayTransactionId() == null) {
-                return createErrorResponse("INVALID_TRANSACTION", "TransactionId não encontrado");
+                return createErrorResponse("INVALID_TRANSACTION", "Transaction Identifier não encontrado");
             }
             
+            Map<String, Object> payload = buildReverseFundsPayload(request, transacao, gateway);
             HttpHeaders headers = buildHeaders(gateway);
-            String url = String.format("%s/payments/%s/void",
-                getBaseUrl(gateway),
-                transacao.getGatewayTransactionId()
-            );
-
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
             
-            logger.debug("[VISA] Enviando cancelamento para: {}", url);
+            String url = getBaseUrl(gateway) + "/fundstransfer/v1/reversefundstransactions";
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+            
+            logger.debug("[VISA] Enviando Reverse Funds para: {}", url);
             
             ResponseEntity<Map> response = restTemplate.exchange(
                 url,
@@ -176,40 +136,24 @@ public class VisaAdapter implements GatewayAdapter {
                 paymentResponse.setGatewayTransactionId(transacao.getGatewayTransactionId());
                 paymentResponse.setTimestamp(ZonedDateTime.now());
 
-                logger.info("[VISA] Cancelamento bem-sucedido: {}", transacao.getGatewayTransactionId());
+                logger.info("[VISA] Estorno bem-sucedido");
                 return paymentResponse;
             } else {
-                return createErrorResponse("VOID_FAILED", "Falha no cancelamento");
+                return createErrorResponse("VOID_FAILED", "Falha no estorno");
             }
 
         } catch (Exception e) {
-            logger.error("[VISA] Erro no cancelamento", e);
+            logger.error("[VISA] Erro no estorno", e);
             return createErrorResponse("GATEWAY_ERROR", e.getMessage());
         }
     }
 
     @Override
     public boolean healthCheck(Gateway gateway) {
-        try {
-            HttpHeaders headers = buildHeaders(gateway);
-            String url = getBaseUrl(gateway) + "/health";
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
-            
-            ResponseEntity<String> response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                entity,
-                String.class
-            );
-
-            return response.getStatusCode().is2xxSuccessful();
-
-        } catch (HttpClientErrorException e) {
-            return e.getStatusCode() == HttpStatus.NOT_FOUND;
-        } catch (Exception e) {
-            logger.warn("[VISA] Health check falhou: {}", e.getMessage());
-            return false;
-        }
+        logger.warn("[VISA] Health check requer mTLS configurado");
+        // Visa não tem endpoint de health check público
+        // Verificamos apenas se as configurações básicas estão presentes
+        return gateway.getApiKey() != null && gateway.getMerchantId() != null;
     }
 
     @Override
@@ -217,27 +161,96 @@ public class VisaAdapter implements GatewayAdapter {
         return GATEWAY_CODE;
     }
 
-    private void validateRequest(AuthorizationRequest request) {
+    // ========== MÉTODOS PRIVADOS ==========
+
+    private void validateRequest(AuthorizationRequest request, Gateway gateway) {
         if (request.getAmount() == null || request.getAmount() <= 0) {
-            throw new IllegalArgumentException("Valor inválido");
+            throw new IllegalArgumentException("amount inválido");
         }
-        if (request.getCardToken() == null || request.getCardToken().isEmpty()) {
-            throw new IllegalArgumentException("Token do cartão obrigatório");
+        if (gateway.getMerchantId() == null) {
+            throw new IllegalArgumentException("acquiringBin (MerchantId) obrigatório");
+        }
+        if (gateway.getApiKey() == null) {
+            throw new IllegalArgumentException("userId/password (ApiKey) obrigatório para Basic Auth");
         }
     }
 
-    private Map<String, Object> buildAuthorizationPayload(AuthorizationRequest request, Transacao transacao) {
+    private Map<String, Object> buildPushFundsPayload(AuthorizationRequest request, Transacao transacao, Gateway gateway) {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("transaction_id", transacao.getTransactionId());
-        payload.put("amount", request.getAmount());
-        payload.put("currency", request.getCurrency() != null ? request.getCurrency() : "BRL");
-        payload.put("card_token", request.getCardToken());
-        payload.put("installments", request.getInstallments() != null ? request.getInstallments() : 1);
-        payload.put("capture", false);
         
-        if (request.getCustomer() != null) {
-            payload.put("customer", request.getCustomer());
-        }
+        // acquirerCountryCode (3 dígitos) - País do BIN
+        payload.put("acquirerCountryCode", "076"); // Brasil
+        
+        // acquiringBin - BIN do programa Visa Direct
+        payload.put("acquiringBin", gateway.getMerchantId());
+        
+        // amount (double, max 3 decimais)
+        payload.put("amount", request.getAmount());
+        
+        // businessApplicationId (2 caracteres)
+        // AA = Account-to-Account, PP = Person-to-Person, etc
+        payload.put("businessApplicationId", "AA");
+        
+        // cardAcceptor
+        Map<String, Object> cardAcceptor = new HashMap<>();
+        cardAcceptor.put("idCode", "PIP" + gateway.getMerchantId());
+        cardAcceptor.put("name", "Payment Integration Platform");
+        cardAcceptor.put("terminalId", "PIP00001");
+        
+        Map<String, Object> address = new HashMap<>();
+        address.put("country", "BRA");
+        address.put("state", "SP");
+        address.put("zipCode", "01310100");
+        cardAcceptor.put("address", address);
+        
+        payload.put("cardAcceptor", cardAcceptor);
+        
+        // localTransactionDateTime (ISO 8601)
+        payload.put("localTransactionDateTime", 
+            ZonedDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        // merchantCategoryCode (MCC)
+        payload.put("merchantCategoryCode", "6012"); // Financial institutions
+        
+        // pointOfServiceData
+        Map<String, Object> posData = new HashMap<>();
+        posData.put("panEntryMode", "07"); // Ecommerce
+        posData.put("posConditionCode", "00"); // Normal
+        payload.put("pointOfServiceData", posData);
+        
+        // recipientPrimaryAccountNumber - Cartão destinatário
+        payload.put("recipientPrimaryAccountNumber", request.getCardToken());
+        
+        // retrievalReferenceNumber (ydddhhnnnnnn)
+        payload.put("retrievalReferenceNumber", generateRRN());
+        
+        // senderAccountNumber - Conta origem
+        payload.put("senderAccountNumber", gateway.getApiKey());
+        
+        // senderCurrencyCode
+        payload.put("senderCurrencyCode", "BRL");
+        
+        // systemsTraceAuditNumber (único)
+        payload.put("systemsTraceAuditNumber", generateSTAN());
+        
+        logger.debug("[VISA] Push Funds payload construído");
+        
+        return payload;
+    }
+
+    private Map<String, Object> buildReverseFundsPayload(VoidRequest request, Transacao transacao, Gateway gateway) {
+        Map<String, Object> payload = new HashMap<>();
+        
+        // Mesmos campos do Push, mas com transactionIdentifier da transação original
+        payload.put("acquirerCountryCode", "076");
+        payload.put("acquiringBin", gateway.getMerchantId());
+        payload.put("amount", transacao.getValor());
+        payload.put("businessApplicationId", "AA");
+        payload.put("transactionIdentifier", transacao.getGatewayTransactionId());
+        payload.put("localTransactionDateTime", 
+            ZonedDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        payload.put("retrievalReferenceNumber", generateRRN());
+        payload.put("systemsTraceAuditNumber", generateSTAN());
         
         return payload;
     }
@@ -245,8 +258,13 @@ public class VisaAdapter implements GatewayAdapter {
     private HttpHeaders buildHeaders(Gateway gateway) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + gateway.getMerchantKey());
-        headers.set("X-Request-Id", UUID.randomUUID().toString());
+        
+        // Basic Authentication (userId:password em Base64)
+        // gateway.getApiKey() deve conter "userId:password"
+        String auth = gateway.getApiKey();
+        String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+        headers.set("Authorization", "Basic " + encodedAuth);
+        
         return headers;
     }
 
@@ -254,23 +272,48 @@ public class VisaAdapter implements GatewayAdapter {
         return gateway.getAmbiente().toString().equals("SANDBOX") ? SANDBOX_URL : PRODUCTION_URL;
     }
 
-    private PaymentResponse processAuthorizationResponse(ResponseEntity<Map> response, Transacao transacao) {
-        if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+    private PaymentResponse processPushFundsResponse(ResponseEntity<Map> response, Transacao transacao) {
+        if (response.getStatusCode() == HttpStatus.OK) {
             Map<String, Object> responseBody = response.getBody();
 
             PaymentResponse paymentResponse = new PaymentResponse();
-            paymentResponse.setSuccess(true);
-            paymentResponse.setStatus("AUTHORIZED");
+            
+            String actionCode = (String) responseBody.get("actionCode");
+            boolean isApproved = "00".equals(actionCode);
+            
+            paymentResponse.setSuccess(isApproved);
+            paymentResponse.setStatus(isApproved ? "AUTHORIZED" : "DENIED");
             paymentResponse.setTransactionId(transacao.getTransactionId());
-            paymentResponse.setGatewayTransactionId((String) responseBody.get("id"));
-            paymentResponse.setAuthorizationCode((String) responseBody.get("authorization_code"));
+            paymentResponse.setGatewayTransactionId(String.valueOf(responseBody.get("transactionIdentifier")));
+            paymentResponse.setAuthorizationCode((String) responseBody.get("approvalCode"));
             paymentResponse.setTimestamp(ZonedDateTime.now());
 
-            logger.info("[VISA] Autorização bem-sucedida: {}", paymentResponse.getGatewayTransactionId());
+            if (!isApproved) {
+                paymentResponse.setErrorMessage("Action Code: " + actionCode);
+            }
+
+            logger.info("[VISA] Push Funds processado: {} - Action Code: {}", 
+                paymentResponse.getGatewayTransactionId(), actionCode);
+            
             return paymentResponse;
         } else {
-            return createErrorResponse("AUTHORIZATION_FAILED", "Falha na autorização");
+            return createErrorResponse("PUSH_FUNDS_FAILED", "Falha no Push Funds");
         }
+    }
+
+    private String generateRRN() {
+        // ydddhhnnnnnn format
+        ZonedDateTime now = ZonedDateTime.now();
+        int year = now.getYear() % 10;
+        int dayOfYear = now.getDayOfYear();
+        int hour = now.getHour();
+        int random = (int)(Math.random() * 1000000);
+        
+        return String.format("%d%03d%02d%06d", year, dayOfYear, hour, random);
+    }
+
+    private int generateSTAN() {
+        return (int)(Math.random() * 1000000);
     }
 
     private PaymentResponse createErrorResponse(String errorCode, String errorMessage) {
@@ -279,6 +322,9 @@ public class VisaAdapter implements GatewayAdapter {
         response.setErrorCode(errorCode);
         response.setErrorMessage(errorMessage);
         response.setTimestamp(ZonedDateTime.now());
+        
+        logger.warn("[VISA] Erro: {} - {}", errorCode, errorMessage);
+        
         return response;
     }
 }
