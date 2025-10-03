@@ -1,6 +1,6 @@
 package com.pip.dto;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * DTO para requisição de destokenização

@@ -84,28 +84,28 @@ public class CieloWebhookController {
 
         switch (changeType) {
             case 1: // Authorized
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[CIELO WEBHOOK] Pagamento autorizado: {}", paymentId);
                 break;
 
             case 2: // PaymentConfirmed (Captured)
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[CIELO WEBHOOK] Pagamento capturado: {}", paymentId);
                 break;
 
             case 3: // Denied
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 logger.info("[CIELO WEBHOOK] Pagamento negado: {}", paymentId);
                 break;
 
             case 10: // Voided
             case 11: // Refunded
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[CIELO WEBHOOK] Pagamento cancelado/estornado: {}", paymentId);
                 break;
 
             case 13: // Aborted
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 transacao.setErrorMessage("Transaction aborted");
                 logger.info("[CIELO WEBHOOK] Transação abortada: {}", paymentId);
                 break;

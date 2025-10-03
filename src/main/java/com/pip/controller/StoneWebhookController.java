@@ -110,12 +110,12 @@ public class StoneWebhookController {
         // Processar baseado no tipo de evento
         switch (eventType) {
             case "charge.succeeded":
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[STONE WEBHOOK] Pagamento aprovado: {}", chargeId);
                 break;
 
             case "charge.failed":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 String failureReason = (String) chargeData.get("failure_reason");
                 transacao.setErrorMessage(failureReason);
                 logger.info("[STONE WEBHOOK] Pagamento negado: {} - Motivo: {}", 
@@ -123,12 +123,12 @@ public class StoneWebhookController {
                 break;
 
             case "charge.refunded":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[STONE WEBHOOK] Pagamento estornado: {}", chargeId);
                 break;
 
             case "charge.captured":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[STONE WEBHOOK] Captura realizada: {}", chargeId);
                 break;
 

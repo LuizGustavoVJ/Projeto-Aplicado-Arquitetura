@@ -251,7 +251,7 @@ public class BoletoAdapter implements GatewayAdapter {
     }
 
     private String getBaseUrl(Gateway gateway) {
-        return gateway.getAmbiente().toString().equals("SANDBOX") ? SANDBOX_URL : PRODUCTION_URL;
+        return gateway.getAmbiente().name().equals("SANDBOX") ? SANDBOX_URL : PRODUCTION_URL;
     }
 
     private PaymentResponse processAuthorizationResponse(ResponseEntity<Map> response, Transacao transacao) {

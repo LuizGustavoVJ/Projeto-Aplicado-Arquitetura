@@ -22,6 +22,11 @@ import java.util.UUID;
 public interface LojistaRepository extends JpaRepository<Lojista, UUID> {
 
     /**
+     * Busca lojista por API Key
+     */
+    Lojista findByApiKey(String apiKey);
+
+    /**
      * Busca lojista por email
      */
     Optional<Lojista> findByEmail(String email);
