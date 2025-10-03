@@ -1,0 +1,80 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/pip/application*.log
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      log_type: application
+      environment: production
+    
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/pip/audit*.log
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      log_type: audit
+      environment: production
+      
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/pip/security*.log
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      log_type: security
+      environment: production
+      
+  - type: container
+    enabled: true
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  indices:
+    - index: "pip-logs-application-%{+yyyy.MM.dd}"
+      when.equals:
+        fields.log_type: "application"
+    - index: "pip-logs-audit-%{+yyyy.MM.dd}"
+      when.equals:
+        fields.log_type: "audit"
+    - index: "pip-logs-security-%{+yyyy.MM.dd}"
+      when.equals:
+        fields.log_type: "security"
+    - index: "pip-logs-docker-%{+yyyy.MM.dd}"
+      when.not.equals:
+        fields.log_type: ["application", "audit", "security"]
+
+setup.kibana:
+  host: "kibana:5601"
+
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "pip-logs"
+setup.ilm.pattern: "{now/d}-000001"
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
