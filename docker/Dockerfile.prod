@@ -1,12 +1,12 @@
 # Multi-stage build otimizado para produção
 # Fase 1: Build com cache de dependências
-FROM maven:3.9-eclipse-temurin-17 AS dependencies
+FROM maven:3-eclipse-temurin-25 AS dependencies
 WORKDIR /build
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 # Fase 2: Build da aplicação
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3-eclipse-temurin-25 AS build
 WORKDIR /build
 COPY --from=dependencies /root/.m2 /root/.m2
 COPY pom.xml .
