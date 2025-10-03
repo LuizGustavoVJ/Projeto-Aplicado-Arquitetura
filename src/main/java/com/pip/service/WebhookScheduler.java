@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Scheduler para processamento de webhooks pendentes e reenvio
@@ -196,5 +197,3 @@ public class WebhookScheduler {
         }
     }
 }
-
-import java.util.Map;
