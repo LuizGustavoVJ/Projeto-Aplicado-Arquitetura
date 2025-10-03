@@ -15,7 +15,7 @@ RUN mvn clean package -DskipTests -B && \
     mv target/*.jar app.jar
 
 # Fase 3: Runtime otimizado
-FROM eclipse-temurin:17-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 WORKDIR /app
 
 # Instalar dependências necessárias
