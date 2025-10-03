@@ -1,0 +1,43 @@
+# Terraform Variables Example
+# Copie este arquivo para terraform.tfvars e preencha com seus valores
+
+# Project Configuration
+project_name        = "pip"
+resource_group_name = "pip-rg"
+location            = "brazilsouth"
+
+# Database Configuration
+db_admin_username = "pipadmin"
+db_admin_password = "CHANGE_ME_STRONG_PASSWORD_HERE"
+db_name           = "pip_db"
+db_sku_name       = "GP_Standard_D2s_v3"  # 2 vCores, 8GB RAM
+enable_read_replica = false
+
+# Redis Configuration
+redis_capacity  = 1
+redis_family    = "C"
+redis_sku_name  = "Standard"  # Basic, Standard, or Premium
+redis_shard_count = 3  # Only for Premium
+
+# App Service Configuration
+app_service_sku = "P1v2"  # 1 vCore, 3.5GB RAM
+docker_registry = "docker.io"
+docker_image    = "luizgustavovj/payment-integration-platform"
+
+# CORS Configuration
+allowed_origins = [
+  "https://app.pip-platform.com",
+  "https://www.pip-platform.com"
+]
+
+# Custom Domains (optional)
+staging_custom_domain    = ""  # Ex: staging.pip-platform.com
+production_custom_domain = ""  # Ex: api.pip-platform.com
+
+# Tags
+tags = {
+  Environment = "Production"
+  Project     = "Payment Integration Platform"
+  ManagedBy   = "Terraform"
+  Owner       = "Luiz Gustavo Finotello"
+}
