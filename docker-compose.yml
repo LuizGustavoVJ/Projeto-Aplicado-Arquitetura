@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  pip-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/pip
+      - SPRING_DATASOURCE_USERNAME=pip
+      - SPRING_DATASOURCE_PASSWORD=pip123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - pip-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=pip
+      - POSTGRES_USER=pip
+      - POSTGRES_PASSWORD=pip123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - pip-network
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - pip-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "15672:15672"
+    networks:
+      - pip-network
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    ports:
+      - "8081:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - pip-network
+
+volumes:
+  postgres-data:
+  jenkins-data:
+
+networks:
+  pip-network:
+    driver: bridge

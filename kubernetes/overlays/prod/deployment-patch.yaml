@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pip
+spec:
+  replicas: 5
+  template:
+    spec:
+      containers:
+      - name: pip
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
