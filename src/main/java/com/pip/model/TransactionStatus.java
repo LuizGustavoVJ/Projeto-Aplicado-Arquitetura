@@ -19,6 +19,7 @@ public enum TransactionStatus {
     
     // Status de falha
     DECLINED("declined", "Transação negada pelo gateway"),
+    DENIED("denied", "Transação negada"),
     FAILED("failed", "Transação falhou por erro técnico"),
     EXPIRED("expired", "Transação expirou"),
     

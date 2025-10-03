@@ -250,7 +250,7 @@ public class WebhookService {
         Map<String, Object> transactionData = new HashMap<>();
         transactionData.put("transaction_id", transacao.getTransactionId());
         transactionData.put("gateway_transaction_id", transacao.getGatewayTransactionId());
-        transactionData.put("status", transacao.getStatus().name());
+        transactionData.put("status", transacao.getStatus());
         transactionData.put("amount", transacao.getValor());
         transactionData.put("currency", transacao.getMoeda());
         transactionData.put("installments", transacao.getParcelas());
@@ -326,7 +326,7 @@ public class WebhookService {
     }
 
     /**
-     * Cancela webhook pendente
+     * Cancela um webhook pendente ou falhado
      * 
      * @param webhookId ID do webhook
      */
@@ -341,5 +341,23 @@ public class WebhookService {
                     logger.info("Webhook event {} cancelado", webhookEventId);
                 }
             });
+    }
+
+    /**
+     * Notifica o lojista sobre uma transação via webhook
+     * 
+     * @param transacao Transação a ser notificada
+     */
+    public void notificarLojista(Transacao transacao) {
+        try {
+            logger.info("Notificando lojista sobre transação {}", transacao.getId());
+            
+            // Criar evento de webhook
+            criarWebhookParaTransacao(transacao, "transaction.updated");
+            
+        } catch (Exception e) {
+            logger.error("Erro ao notificar lojista sobre transação {}: {}", 
+                transacao.getId(), e.getMessage(), e);
+        }
     }
 }

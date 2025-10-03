@@ -77,22 +77,22 @@ public class RedeWebhookController {
 
         switch (status.toUpperCase()) {
             case "AUTHORIZED":
-                transacao.setStatus(TransactionStatus.AUTHORIZED);
+                transacao.setStatus(TransactionStatus.AUTHORIZED.toString());
                 logger.info("[REDE WEBHOOK] Transação autorizada: {}", tid);
                 break;
 
             case "CAPTURED":
-                transacao.setStatus(TransactionStatus.CAPTURED);
+                transacao.setStatus(TransactionStatus.CAPTURED.toString());
                 logger.info("[REDE WEBHOOK] Transação capturada: {}", tid);
                 break;
 
             case "CANCELLED":
-                transacao.setStatus(TransactionStatus.VOIDED);
+                transacao.setStatus(TransactionStatus.VOIDED.toString());
                 logger.info("[REDE WEBHOOK] Transação cancelada: {}", tid);
                 break;
 
             case "DENIED":
-                transacao.setStatus(TransactionStatus.DENIED);
+                transacao.setStatus(TransactionStatus.DENIED.toString());
                 logger.info("[REDE WEBHOOK] Transação negada: {}", tid);
                 break;
 
