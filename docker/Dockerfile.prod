@@ -1,0 +1,59 @@
+# Multi-stage build otimizado para produção
+# Fase 1: Build com cache de dependências
+FROM maven:3.9-eclipse-temurin-17 AS dependencies
+WORKDIR /build
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Fase 2: Build da aplicação
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /build
+COPY --from=dependencies /root/.m2 /root/.m2
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests -B && \
+    mv target/*.jar app.jar
+
+# Fase 3: Runtime otimizado
+FROM eclipse-temurin:17-jre-alpine AS runtime
+WORKDIR /app
+
+# Instalar dependências necessárias
+RUN apk add --no-cache curl wget && \
+    rm -rf /var/cache/apk/*
+
+# Copiar artefato do build
+COPY --from=build /build/app.jar app.jar
+
+# Criar usuário não-root para segurança PCI-DSS
+RUN addgroup -S spring && \
+    adduser -S spring -G spring && \
+    chown -R spring:spring /app
+
+# Configurações de JVM otimizadas para produção
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+    -XX:MaxRAMPercentage=75.0 \
+    -XX:InitialRAMPercentage=50.0 \
+    -XX:+UseG1GC \
+    -XX:+UseStringDeduplication \
+    -XX:+OptimizeStringConcat \
+    -Djava.security.egd=file:/dev/./urandom \
+    -Dspring.profiles.active=prod"
+
+# Mudar para usuário não-root
+USER spring:spring
+
+# Health check configurado
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+# Expor porta da aplicação
+EXPOSE 8080
+
+# Labels para rastreabilidade
+LABEL maintainer="Payment Integration Platform Team"
+LABEL version="1.0"
+LABEL description="Payment Integration Platform - Production Image"
+
+# Entrypoint com configurações de JVM
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

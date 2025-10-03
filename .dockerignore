@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.jenkins
+Jenkinsfile
+
+# Documentation
+*.md
+docs/
+evidencias/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Build artifacts
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Test
+**/test/
+**/*Test.java
+**/*Tests.java
+
+# Monitoring
+monitoring/
+
+# Scripts (except init-db.sh)
+scripts/*
+!scripts/init-db.sh
+
+# Kubernetes
+kubernetes/
