@@ -1,0 +1,144 @@
+groups:
+  - name: pip_application_alerts
+    interval: 30s
+    rules:
+      # Alta taxa de erros HTTP
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Alta taxa de erros HTTP (instance {{ $labels.instance }})"
+          description: "Taxa de erros 5xx está acima de 5% nos últimos 5 minutos. Valor atual: {{ $value }}"
+
+      # Alta latência de requisições
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Alta latência de requisições (instance {{ $labels.instance }})"
+          description: "P95 de latência está acima de 1s. Valor atual: {{ $value }}s"
+
+      # Aplicação down
+      - alert: ApplicationDown
+        expr: up{job="pip-application"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Aplicação PIP está down (instance {{ $labels.instance }})"
+          description: "A aplicação não está respondendo há mais de 2 minutos"
+
+      # Alto uso de memória
+      - alert: HighMemoryUsage
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: jvm
+        annotations:
+          summary: "Alto uso de memória JVM (instance {{ $labels.instance }})"
+          description: "Uso de heap está acima de 90%. Valor atual: {{ $value | humanizePercentage }}"
+
+      # Alto uso de CPU
+      - alert: HighCPUUsage
+        expr: process_cpu_usage > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Alto uso de CPU (instance {{ $labels.instance }})"
+          description: "Uso de CPU está acima de 80% há mais de 10 minutos. Valor atual: {{ $value | humanizePercentage }}"
+
+  - name: pip_database_alerts
+    interval: 30s
+    rules:
+      # Banco de dados down
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Banco de dados PostgreSQL está down"
+          description: "PostgreSQL não está respondendo há mais de 2 minutos"
+
+      # Alto número de conexões
+      - alert: HighDatabaseConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Alto número de conexões no banco de dados"
+          description: "Número de conexões está acima de 80. Valor atual: {{ $value }}"
+
+  - name: pip_cache_alerts
+    interval: 30s
+    rules:
+      # Redis down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis está down"
+          description: "Redis não está respondendo há mais de 2 minutos"
+
+      # Alto uso de memória no Redis
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Alto uso de memória no Redis"
+          description: "Uso de memória do Redis está acima de 90%. Valor atual: {{ $value | humanizePercentage }}"
+
+  - name: pip_business_alerts
+    interval: 1m
+    rules:
+      # Alta taxa de falhas em pagamentos
+      - alert: HighPaymentFailureRate
+        expr: rate(payment_transactions_total{status="failed"}[10m]) / rate(payment_transactions_total[10m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Alta taxa de falhas em pagamentos"
+          description: "Taxa de falhas em pagamentos está acima de 10% nos últimos 10 minutos. Valor atual: {{ $value | humanizePercentage }}"
+
+      # Baixa taxa de aprovação
+      - alert: LowApprovalRate
+        expr: rate(payment_transactions_total{status="approved"}[10m]) / rate(payment_transactions_total[10m]) < 0.7
+        for: 15m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Baixa taxa de aprovação de pagamentos"
+          description: "Taxa de aprovação está abaixo de 70% nos últimos 15 minutos. Valor atual: {{ $value | humanizePercentage }}"
+
+      # Gateway com alta taxa de erro
+      - alert: GatewayHighErrorRate
+        expr: rate(gateway_requests_total{status="error"}[5m]) / rate(gateway_requests_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "Gateway {{ $labels.gateway }} com alta taxa de erro"
+          description: "Taxa de erro no gateway está acima de 20%. Valor atual: {{ $value | humanizePercentage }}"
