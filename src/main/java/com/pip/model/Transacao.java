@@ -38,6 +38,55 @@ public class Transacao {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt;
 
+    @Column(name = "transaction_id")
+    private String transactionId;
+
+    @Column(name = "gateway_transaction_id")
+    private String gatewayTransactionId;
+
+    @Column(name = "customer_name")
+    private String customerName;
+
+    @Column(name = "customer_email")
+    private String customerEmail;
+
+    @Column(name = "customer_document")
+    private String customerDocument;
+
+    @Column(name = "card_brand")
+    private String cardBrand;
+
+    @Column(name = "card_last_digits")
+    private String cardLastDigits;
+
+    @Column(name = "moeda")
+    private String moeda;
+
+    @Column(name = "parcelas")
+    private Integer parcelas;
+
+    @Column(name = "authorization_code")
+    private String authorizationCode;
+
+    @Column(name = "nsu")
+    private String nsu;
+
+    @Column(name = "tid")
+    private String tid;
+
+    @Column(name = "authorized_at")
+    private ZonedDateTime authorizedAt;
+
+    @Column(name = "captured_at")
+    private ZonedDateTime capturedAt;
+
+    @Column(name = "voided_at")
+    private ZonedDateTime voidedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lojista_id", insertable = false, updatable = false)
+    private Lojista lojista;
+
     // Construtores
     public Transacao() {
         this.createdAt = ZonedDateTime.now();
@@ -115,6 +164,134 @@ public class Transacao {
 
     public void setUpdatedAt(ZonedDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getTransactionId() {
+        return transactionId;
+    }
+
+    public void setTransactionId(String transactionId) {
+        this.transactionId = transactionId;
+    }
+
+    public String getGatewayTransactionId() {
+        return gatewayTransactionId;
+    }
+
+    public void setGatewayTransactionId(String gatewayTransactionId) {
+        this.gatewayTransactionId = gatewayTransactionId;
+    }
+
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public String getCustomerEmail() {
+        return customerEmail;
+    }
+
+    public void setCustomerEmail(String customerEmail) {
+        this.customerEmail = customerEmail;
+    }
+
+    public String getCustomerDocument() {
+        return customerDocument;
+    }
+
+    public void setCustomerDocument(String customerDocument) {
+        this.customerDocument = customerDocument;
+    }
+
+    public String getCardBrand() {
+        return cardBrand;
+    }
+
+    public void setCardBrand(String cardBrand) {
+        this.cardBrand = cardBrand;
+    }
+
+    public String getCardLastDigits() {
+        return cardLastDigits;
+    }
+
+    public void setCardLastDigits(String cardLastDigits) {
+        this.cardLastDigits = cardLastDigits;
+    }
+
+    public String getMoeda() {
+        return moeda;
+    }
+
+    public void setMoeda(String moeda) {
+        this.moeda = moeda;
+    }
+
+    public Integer getParcelas() {
+        return parcelas;
+    }
+
+    public void setParcelas(Integer parcelas) {
+        this.parcelas = parcelas;
+    }
+
+    public String getAuthorizationCode() {
+        return authorizationCode;
+    }
+
+    public void setAuthorizationCode(String authorizationCode) {
+        this.authorizationCode = authorizationCode;
+    }
+
+    public String getNsu() {
+        return nsu;
+    }
+
+    public void setNsu(String nsu) {
+        this.nsu = nsu;
+    }
+
+    public String getTid() {
+        return tid;
+    }
+
+    public void setTid(String tid) {
+        this.tid = tid;
+    }
+
+    public ZonedDateTime getAuthorizedAt() {
+        return authorizedAt;
+    }
+
+    public void setAuthorizedAt(ZonedDateTime authorizedAt) {
+        this.authorizedAt = authorizedAt;
+    }
+
+    public ZonedDateTime getCapturedAt() {
+        return capturedAt;
+    }
+
+    public void setCapturedAt(ZonedDateTime capturedAt) {
+        this.capturedAt = capturedAt;
+    }
+
+    public ZonedDateTime getVoidedAt() {
+        return voidedAt;
+    }
+
+    public void setVoidedAt(ZonedDateTime voidedAt) {
+        this.voidedAt = voidedAt;
+    }
+
+    public Lojista getLojista() {
+        return lojista;
+    }
+
+    public void setLojista(Lojista lojista) {
+        this.lojista = lojista;
     }
 }
 
