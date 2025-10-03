@@ -19,6 +19,11 @@ public interface TransacaoRepository extends JpaRepository<Transacao, UUID> {
      */
     Transacao findByGatewayTransactionId(String gatewayTransactionId);
     
+    /**
+     * Busca transação pelo ID da transação
+     */
+    Transacao findByTransactionId(String transactionId);
+    
     // Métodos customizados podem ser adicionados aqui conforme necessário
 }
 

@@ -23,6 +23,12 @@ public class AuthorizationRequest {
 
     private Boolean capture = true;
 
+    private Integer installments = 1;
+
+    private String description;
+
+    private Customer customer;
+
     // Construtores
     public AuthorizationRequest() {}
 
@@ -64,6 +70,30 @@ public class AuthorizationRequest {
 
     public void setCapture(Boolean capture) {
         this.capture = capture;
+    }
+
+    public Integer getInstallments() {
+        return installments;
+    }
+
+    public void setInstallments(Integer installments) {
+        this.installments = installments;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public Customer getCustomer() {
+        return customer;
+    }
+
+    public void setCustomer(Customer customer) {
+        this.customer = customer;
     }
 }
 

@@ -87,6 +87,19 @@ public class Transacao {
     @JoinColumn(name = "lojista_id", insertable = false, updatable = false)
     private Lojista lojista;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gateway")
+    private Gateway gateway;
+
+    @Column(name = "error_code")
+    private String errorCode;
+
+    @Column(name = "error_message")
+    private String errorMessage;
+
+    @Column(name = "valor_capturado")
+    private Long valorCapturado;
+
     // Construtores
     public Transacao() {
         this.createdAt = ZonedDateTime.now();
@@ -292,6 +305,38 @@ public class Transacao {
 
     public void setLojista(Lojista lojista) {
         this.lojista = lojista;
+    }
+
+    public Gateway getGateway() {
+        return gateway;
+    }
+
+    public void setGateway(Gateway gateway) {
+        this.gateway = gateway;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public void setErrorCode(String errorCode) {
+        this.errorCode = errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
+    }
+
+    public Long getValorCapturado() {
+        return valorCapturado;
+    }
+
+    public void setValorCapturado(Long valorCapturado) {
+        this.valorCapturado = valorCapturado;
     }
 }
 
