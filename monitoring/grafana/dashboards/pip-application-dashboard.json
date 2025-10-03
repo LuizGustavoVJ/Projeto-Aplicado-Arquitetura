@@ -1,0 +1,116 @@
+{
+  "dashboard": {
+    "title": "PIP - Application Metrics",
+    "tags": ["pip", "application", "payments"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Requests Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(http_server_requests_seconds_count[5m])",
+            "legendFormat": "{{method}} {{uri}} - {{status}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "HTTP Request Latency (P95)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m]))",
+            "legendFormat": "{{method}} {{uri}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "JVM Memory Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "jvm_memory_used_bytes{area='heap'}",
+            "legendFormat": "Heap Used"
+          },
+          {
+            "expr": "jvm_memory_max_bytes{area='heap'}",
+            "legendFormat": "Heap Max"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "CPU Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "process_cpu_usage",
+            "legendFormat": "CPU Usage"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Payment Transactions",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(payment_transactions_total[5m])",
+            "legendFormat": "{{status}} - {{gateway}}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Gateway Performance",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(gateway_requests_total[5m])",
+            "legendFormat": "{{gateway}} - {{status}}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Database Connections",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "hikaricp_connections_active",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "hikaricp_connections_idle",
+            "legendFormat": "Idle Connections"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "rate(cache_gets_total{result='hit'}[5m]) / rate(cache_gets_total[5m])",
+            "legendFormat": "Hit Rate"
+          }
+        ]
+      }
+    ]
+  }
+}
